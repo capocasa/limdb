@@ -59,21 +59,35 @@ proc release*(t: Transaction) =
 
 proc `[]`*(d: Database, key: string, namespace=""): string =
   let t = d.start(namespace)
-  result = t[key]
-  t.release()
+  try:
+    result = t[key]
+  finally:
+    t.release()
 
 proc `[]=`*(d: Database, key, value: string, namespace="") =
   let t = d.start(namespace)
-  t[key] = value
+  try:
+    t[key] = value
+  except:
+    t.release()
+    raise
   t.commit()
 
 proc del*(db: Database, key, value: string, namespace="") =
   let t = db.start(namespace)
-  t.del(key, value)
+  try:
+    t.del(key, value)
+  except:
+    t.release()
+    raise
   t.commit()
 
 proc del*(db: Database, key: string, namespace="") =
   let t = db.start(namespace)
-  t.del(key)
+  try:
+    t.del(key)
+  except:
+    t.release()
+    raise
   t.commit()
 
