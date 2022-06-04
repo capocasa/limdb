@@ -7,33 +7,35 @@
 # could do it on the client but it will just be such a pleasant surprise when
 # someone finds a half-finished comment already there when loading on another device
 
-import std/os, std/tables, lmdb
+import std/os, lmdb
 
 export lmdb
 
 type
   Database* = object
     env*: LMDBEnv
-    namespaces*: TableRef[string, Dbi]  # TODO: why doesn't Table work here?
+    dbi*: Dbi
 
   Transaction* = object
     txn*: LMDBTxn
     dbi*: Dbi
 
-proc initDatabase*(filename: string): Database =
-  createDir(filename)
-  result.env = newLMDBEnv(filename)
-  result.namespaces = newTable[string, Dbi]()
-
-proc initNamespace*(db: Database, namespace= "", args:uint = 0): Dbi =
+proc open*(db: Database, name: string): Dbi =
   let dummy = db.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
-  result = dummy.dbiOpen(namespace, args.cuint)
+  result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc start*(db: Database, namespace:string = "", args:uint = 0): Transaction =
-  if not (namespace in db.namespaces):
-    db.namespaces[namespace] = initNamespace(db, namespace, args)
-  result.dbi = db.namespaces[namespace]
+proc initDatabase*(filename = "", name = ""): Database =
+  createDir(filename)
+  result.env = newLMDBEnv(filename, 255)  # TODO: dynamic maxdbs
+  result.dbi = result.open(name)
+
+proc initDatabase*(db: Database, name = ""): Database =
+  result.env = db.env
+  result.dbi = result.open(name)
+
+proc initTransaction*(db: Database): Transaction =
+  result.dbi = db.dbi
   result.txn = db.env.newTxn()
 
 proc `[]`*(t: Transaction, key: string): string =
@@ -54,40 +56,40 @@ proc del*(t: Transaction, key: string) =
 proc commit*(t: Transaction) =
   t.txn.commit()
 
-proc release*(t: Transaction) =
+proc reset*(t: Transaction) =
   t.txn.abort()
 
-proc `[]`*(d: Database, key: string, namespace=""): string =
-  let t = d.start(namespace)
+proc `[]`*(db: Database, key: string): string =
+  let t = db.initTransaction()
   try:
     result = t[key]
   finally:
-    t.release()
+    t.reset()
 
-proc `[]=`*(d: Database, key, value: string, namespace="") =
-  let t = d.start(namespace)
+proc `[]=`*(d: Database, key, value: string) =
+  let t = d.initTransaction()
   try:
     t[key] = value
   except:
-    t.release()
+    t.reset()
     raise
   t.commit()
 
-proc del*(db: Database, key, value: string, namespace="") =
-  let t = db.start(namespace)
+proc del*(db: Database, key, value: string) =
+  let t = db.initTransaction()
   try:
     t.del(key, value)
   except:
-    t.release()
+    t.reset()
     raise
   t.commit()
 
-proc del*(db: Database, key: string, namespace="") =
-  let t = db.start(namespace)
+proc del*(db: Database, key: string) =
+  let t = db.initTransaction()
   try:
     t.del(key)
   except:
-    t.release()
+    t.reset()
     raise
   t.commit()
 
