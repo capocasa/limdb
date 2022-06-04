@@ -25,9 +25,9 @@ proc open*(db: Database, name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(filename = "", name = ""): Database =
+proc initDatabase*(filename = "", name = "", maxdbs = 255): Database =
   createDir(filename)
-  result.env = newLMDBEnv(filename, 255)  # TODO: dynamic maxdbs
+  result.env = newLMDBEnv(filename, maxdbs)
   result.dbi = result.open(name)
 
 proc initDatabase*(db: Database, name = ""): Database =
