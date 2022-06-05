@@ -111,3 +111,33 @@ proc hasKey*(db: Database, key: string):bool =
 proc contains*(db: Database, key:string):bool =
   hasKey(db, key)
 
+iterator keys*(t: Transaction): string =
+  let cursor = cursorOpen(t.txn, t.dbi)
+  var k:Val
+  var data:Val
+  let err = cursorGet(cursor, addr(k), addr(data), lmdb.FIRST)
+  if err == 0:
+    var key = newStringOfCap(k.mvSize)
+    key.setLen(k.mvSize)
+    copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
+    yield key
+    while true:
+      let err = cursorGet(cursor, addr(k), addr(data), op=NEXT)
+      if err == 0:
+        var key = newStringOfCap(k.mvSize)
+        key.setLen(k.mvSize)
+        copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
+        yield key
+      elif err == lmdb.NOTFOUND:
+        cursor.cursorClose
+        break
+      else:
+        cursor.cursorClose
+        raise newException(Exception, $strerror(err))
+
+iterator keys*(db: Database): string =
+  let t = db.initTransaction()
+  for key in t.keys:
+    yield key
+  t.reset()
+
