@@ -44,5 +44,5 @@ Now if you comment out the write, you can run the program again and read the val
 
 That's it. If you just need to quickly save some data, you can stop reading here and start programming.
 
-[API Documentation](https://github.com/capocasa/limdb)
+[API Documentation](https://capocasa.github.io/limdb/limdb.html)
 
