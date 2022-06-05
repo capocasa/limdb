@@ -114,15 +114,15 @@ proc contains*(db: Database, key:string):bool =
 iterator keys*(t: Transaction): string =
   let cursor = cursorOpen(t.txn, t.dbi)
   var k:Val
-  var data:Val
-  let err = cursorGet(cursor, addr(k), addr(data), lmdb.FIRST)
+  var d:Val
+  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
   if err == 0:
     var key = newStringOfCap(k.mvSize)
     key.setLen(k.mvSize)
     copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
     yield key
     while true:
-      let err = cursorGet(cursor, addr(k), addr(data), op=NEXT)
+      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
       if err == 0:
         var key = newStringOfCap(k.mvSize)
         key.setLen(k.mvSize)
@@ -135,9 +135,75 @@ iterator keys*(t: Transaction): string =
         cursor.cursorClose
         raise newException(Exception, $strerror(err))
 
+iterator values*(t: Transaction): string =
+  let cursor = cursorOpen(t.txn, t.dbi)
+  var k:Val
+  var d:Val
+  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
+  if err == 0:
+    var data = newStringOfCap(d.mvSize)
+    data.setLen(d.mvSize)
+    copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
+    yield data
+    while true:
+      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
+      if err == 0:
+        var data = newStringOfCap(d.mvSize)
+        data.setLen(d.mvSize)
+        copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
+        yield data
+      elif err == lmdb.NOTFOUND:
+        cursor.cursorClose
+        break
+      else:
+        cursor.cursorClose
+        raise newException(Exception, $strerror(err))
+
+iterator pairs*(t: Transaction): (string, string) =
+  let cursor = cursorOpen(t.txn, t.dbi)
+  var k:Val
+  var d:Val
+  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
+  if err == 0:
+    var key = newStringOfCap(k.mvSize)
+    key.setLen(k.mvSize)
+    copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
+    var data = newStringOfCap(d.mvSize)
+    data.setLen(d.mvSize)
+    copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
+    yield (key, data)
+    while true:
+      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
+      if err == 0:
+        var key = newStringOfCap(k.mvSize)
+        key.setLen(k.mvSize)
+        copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
+        var data = newStringOfCap(d.mvSize)
+        data.setLen(d.mvSize)
+        copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
+        yield (key, data)
+      elif err == lmdb.NOTFOUND:
+        cursor.cursorClose
+        break
+      else:
+        cursor.cursorClose
+        raise newException(Exception, $strerror(err))
+
 iterator keys*(db: Database): string =
   let t = db.initTransaction()
   for key in t.keys:
     yield key
+  t.reset()
+
+iterator values*(db: Database): string =
+  let t = db.initTransaction()
+  for value in t.values:
+    yield value
+  t.reset()
+
+iterator pairs*(db: Database): (string, string) =
+  let t = db.initTransaction()
+  for pair in t.pairs:
+    yield pair
   t.reset()
 
