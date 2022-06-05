@@ -64,27 +64,65 @@ proc initTransaction*(db: Database): Transaction =
   result.dbi = db.dbi
   result.txn = db.env.newTxn()
 
+proc toBlob*(s: string): Blob =
+  ## Convert a string to a chunk of data, key or value, for LMDB
+  ## .. note::
+  ##     If you want other data types than a string, implement this for the data type
+  result.mvSize = s.len.uint
+  result.mvData = s.cstring
+
+proc fromBlob*(b: Blob): string =
+  ## Convert a chunk of data, key or value, to a string
+  ## .. note::
+  ##     If you want other data types than a string, implement this for the data type
+  result = newStringOfCap(b.mvSize)
+  result.setLen(b.mvSize)
+  copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
+
 proc `[]`*(t: Transaction, key: string): string =
   # Read a value from a key in a transaction
-  lmdb.get(t.txn, t.dbi, key)
+  var k = key.toBlob
+  var d: Blob
+  let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
+  if err == 0:
+    result = d.fromBlob
+  elif err == lmdb.NOTFOUND:
+    raise newException(KeyError, $strerror(err))
+  else:
+    raise newException(Exception, $strerror(err))
 
 proc `[]=`*(t: Transaction, key, value: string) =
   # Write a value to a key in a transaction
-  lmdb.put(t.txn, t.dbi, key, value)
+  var k = key.toBlob
+  var v = value.toBlob
+  let err = lmdb.put(t.txn, t.dbi, addr(k), addr(v), 0)
+  if err == 0:
+    return
+  elif err == lmdb.NOTFOUND:
+    raise newException(KeyError, $strerror(err))
+  else:
+    raise newException(Exception, $strerror(err))
 
 proc del*(t: Transaction, key, value: string) =
   ## Delete a key-value pair
   # weird lmdb quirk, you delete with both key and value because you can "shadow"
   # a key's value with another put
-  lmdb.del(t.txn, t.dbi, key, value)
+  var k = key.toBlob
+  var v = value.toBlob
+  let err = lmdb.del(t.txn, t.dbi, addr(k), addr(v))
+  if err == 0:
+    return
+  elif err == lmdb.NOTFOUND:
+    raise newException(KeyError, $strerror(err))
+  else:
+    raise newException(Exception, $strerror(err))
 
 template del*(t: Transaction, key: string) =
   ## Delete a value in a transaction
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
-  # shortcut here to just get rid of one of the values
-  lmdb.del(t.txn, t.dbi, key, lmdb.get(t.txn, t.dbi, key))
+  t.del(key, t[key])
 
 proc hasKey*(t: Transaction, key: string): bool =
   ## See if a key exists without fetching any data
@@ -169,11 +207,6 @@ proc contains*(db: Database, key:string):bool =
   ## Alias for hasKey to support `in` syntax in transactions
   hasKey(db, key)
 
-proc fromBlob*(v: Blob): string =
-    result = newStringOfCap(v.mvSize)
-    result.setLen(v.mvSize)
-    copyMem(cast[pointer](result.cstring), cast[pointer](v.mvData), v.mvSize)
-
 iterator keys*(t: Transaction): string =
   ## Iterate over all keys in a database with a transaction
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -212,6 +245,40 @@ iterator values*(t: Transaction): string =
         cursor.cursorClose
         raise newException(Exception, $strerror(err))
 
+iterator mvalues*(t: Transaction): var string =
+  ## Iterate over all values in a database with a transaction, allowing
+  ## the values to be modified.
+  let cursor = cursorOpen(t.txn, t.dbi)
+  var key:Blob
+  var data:Blob
+  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  if err == 0:
+    var d: ref string
+    new(d)
+    d[] = fromBlob(data)
+    yield d[]
+    var mdata = d[].toBlob
+    if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+      cursor.cursorClose
+      raise newException(Exception, $strerror(err))
+    while true:
+      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+      if err == 0:
+        var d:ref string
+        new(d)
+        d[] = fromBlob(data)
+        yield d[]
+        var mdata = d[].toBlob
+        if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+          cursor.cursorClose
+          raise newException(Exception, $strerror(err))
+      elif err == lmdb.NOTFOUND:
+        cursor.cursorClose
+        break
+      else:
+        cursor.cursorClose
+        raise newException(Exception, $strerror(err))
+
 iterator pairs*(t: Transaction): (string, string) =
   ## Iterate over all key-value pairs in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -224,6 +291,40 @@ iterator pairs*(t: Transaction): (string, string) =
       let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
       if err == 0:
         yield (fromBlob(key), fromBlob(data))
+      elif err == lmdb.NOTFOUND:
+        cursor.cursorClose
+        break
+      else:
+        cursor.cursorClose
+        raise newException(Exception, $strerror(err))
+
+iterator mpairs*(t: Transaction): (string, var string) =
+  ## Iterate over all key-value pairs in a database with a transaction, allowing
+  ## the values to be modified.
+  let cursor = cursorOpen(t.txn, t.dbi)
+  var key:Blob
+  var data:Blob
+  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  if err == 0:
+    var d: ref string
+    new(d)
+    d[] = data.fromBlob
+    yield (key.fromBlob, d[])
+    var mdata = d[].toBlob
+    if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+      cursor.cursorClose
+      raise newException(Exception, $strerror(err))
+    while true:
+      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+      if err == 0:
+        var d:ref string
+        new(d)
+        d[] = data.fromBlob
+        yield (key.fromBlob, d[])
+        var mdata = d[].toBlob
+        if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+          cursor.cursorClose
+          raise newException(Exception, $strerror(err))
       elif err == lmdb.NOTFOUND:
         cursor.cursorClose
         break
@@ -257,6 +358,25 @@ iterator pairs*(db: Database): (string, string) =
   for pair in t.pairs:
     yield pair
   t.reset()
+
+iterator mvalues*(db: Database): var string =
+  ## Iterate over all values in a database allowing modification
+  ## .. note::
+  ##     This inits and resets a transaction under the hood
+  let t = db.initTransaction
+  for value in t.mvalues:
+    yield value
+  t.commit()
+
+iterator mpairs*(db: Database): (string, var string) =
+  ## Iterate over all key-value pairs in a database allowing the values
+  ## to be modified
+  ## .. note::
+  ##     This inits and resets a transaction under the hood
+  let t = db.initTransaction
+  for k, v in t.mpairs:
+    yield (k, v)
+  t.commit()
 
 proc copy*(db: Database, filename: string) =
   ## Copy a database to a different directory. This also performs routine database

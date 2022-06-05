@@ -118,3 +118,18 @@ block:
     v.add(value)
   assert k == @["foo", "fooo", "fuuz", "fuz"], "iterate over pairs in order, keys"
   assert v == @["bar", "baar", "buuz", "buz"], "iterate over pairs in order, values"
+
+block:
+  for value in db2.mvalues:
+    if value == "buuz":
+      value = "baaz"
+
+  for key, value in db2.mpairs:
+    if key == "fooo":
+      value = "baaa"
+
+  var v:seq[string]
+  for value in db2.values:
+    v.add(value)
+  assert v == @["bar", "baaa", "baaz", "buz"], "iterate over values and pairs, modifying one value each"
+
