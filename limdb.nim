@@ -25,6 +25,11 @@ type
     txn*: LMDBTxn
     dbi*: Dbi
 
+  Blob* = Val
+    ## A variable-length collection of bytes that can be used as either a key or value. This
+    ## is LMDB's native storage type- a block of memory. `string` types are converted automatically,
+    ## and conversion for other data types can be added by adding `fromBlob` and `toBlob` for a type.
+
 proc open*(db: Database, name: string): Dbi =
   # Open a database and return a low-level handle
   let dummy = db.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
@@ -84,8 +89,8 @@ template del*(t: Transaction, key: string) =
 proc hasKey*(t: Transaction, key: string): bool =
   ## See if a key exists without fetching any data
   var key = key
-  var k = Val(mvSize: key.len.uint, mvData: key.cstring)
-  var dummy:Val
+  var k = Blob(mvSize: key.len.uint, mvData: key.cstring)
+  var dummy:Blob
   return 0 == get(t.txn, t.dbi, addr(k), addr(dummy))
 
 proc contains*(t: Transaction, key: string): bool =
@@ -164,24 +169,23 @@ proc contains*(db: Database, key:string):bool =
   ## Alias for hasKey to support `in` syntax in transactions
   hasKey(db, key)
 
+proc fromBlob*(v: Blob): string =
+    result = newStringOfCap(v.mvSize)
+    result.setLen(v.mvSize)
+    copyMem(cast[pointer](result.cstring), cast[pointer](v.mvData), v.mvSize)
+
 iterator keys*(t: Transaction): string =
   ## Iterate over all keys in a database with a transaction
   let cursor = cursorOpen(t.txn, t.dbi)
-  var k:Val
-  var d:Val
-  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
+  var key:Blob
+  var data:Blob
+  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   if err == 0:
-    var key = newStringOfCap(k.mvSize)
-    key.setLen(k.mvSize)
-    copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
-    yield key
+    yield fromBlob(key)
     while true:
-      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
+      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
       if err == 0:
-        var key = newStringOfCap(k.mvSize)
-        key.setLen(k.mvSize)
-        copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
-        yield key
+        yield key.fromBlob
       elif err == lmdb.NOTFOUND:
         cursor.cursorClose
         break
@@ -192,21 +196,15 @@ iterator keys*(t: Transaction): string =
 iterator values*(t: Transaction): string =
   ## Iterate over all values in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
-  var k:Val
-  var d:Val
-  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
+  var key:Blob
+  var data:Blob
+  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   if err == 0:
-    var data = newStringOfCap(d.mvSize)
-    data.setLen(d.mvSize)
-    copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
-    yield data
+    yield fromBlob(data)
     while true:
-      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
+      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
       if err == 0:
-        var data = newStringOfCap(d.mvSize)
-        data.setLen(d.mvSize)
-        copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
-        yield data
+        yield fromBlob(data)
       elif err == lmdb.NOTFOUND:
         cursor.cursorClose
         break
@@ -217,27 +215,15 @@ iterator values*(t: Transaction): string =
 iterator pairs*(t: Transaction): (string, string) =
   ## Iterate over all key-value pairs in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
-  var k:Val
-  var d:Val
-  let err = cursorGet(cursor, addr(k), addr(d), lmdb.FIRST)
+  var key:Blob
+  var data:Blob
+  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   if err == 0:
-    var key = newStringOfCap(k.mvSize)
-    key.setLen(k.mvSize)
-    copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
-    var data = newStringOfCap(d.mvSize)
-    data.setLen(d.mvSize)
-    copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
-    yield (key, data)
+    yield (fromBlob(key), fromBlob(data))
     while true:
-      let err = cursorGet(cursor, addr(k), addr(d), op=NEXT)
+      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
       if err == 0:
-        var key = newStringOfCap(k.mvSize)
-        key.setLen(k.mvSize)
-        copyMem(cast[pointer](key.cstring), cast[pointer](k.mvData), k.mvSize)
-        var data = newStringOfCap(d.mvSize)
-        data.setLen(d.mvSize)
-        copyMem(cast[pointer](data.cstring), cast[pointer](d.mvData), d.mvSize)
-        yield (key, data)
+        yield (fromBlob(key), fromBlob(data))
       elif err == lmdb.NOTFOUND:
         cursor.cursorClose
         break
