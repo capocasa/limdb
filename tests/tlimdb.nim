@@ -12,8 +12,13 @@ let db = initDatabase(getTempDir() / "testlimdb")
 
 db["foo"] = "bar"
 assert db["foo"] == "bar", "write and read back"
+assert db.hasKey("foo"), "key exists op"
+assert "foo" in db, "in syntax"
+
 db.del("foo")
 doAssertRaises(Exception): discard db["foo"]
+assert not db.hasKey("foo"), "key does not exist op"
+assert not ("foo" in db), "not in syntax"
 
 block:
   let t = db.initTransaction()
@@ -23,6 +28,8 @@ block:
 block:
   let t = db.initTransaction()
   assert t["fuz"] == "buz", "write and read back with transaction"
+  assert t.hasKey("fuz"), "key exists op with ransaction"
+  assert "fuz" in t, "in syntax"
   t.reset()
 
 block:
@@ -33,6 +40,8 @@ block:
 block:
   let t = db.initTransaction()
   doAssertRaises(Exception): discard t["fuz"]
+  assert not t.hasKey("fuz"), "key does not exist op with transaction"
+  assert not ("fuz" in t), "not in syntax with transaction"
   t.reset()
 
 let db2 = db.initDatabase("foodb")
@@ -62,4 +71,5 @@ block:
   let t = db2.initTransaction()
   doAssertRaises(Exception): discard t["fuz"]
   t.reset()
+
 

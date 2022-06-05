@@ -6,4 +6,10 @@ license       = "MIT"
 
 requires "lmdb"
 
+task test, "Run tests":
+    exec "nim c -r tests/tlimdb"
+    rmFile "tests/tlimdb"
+
+task docs, "Generate docs":
+    exec "nim doc -o:docs/limdb.html limdb.nim"
 
