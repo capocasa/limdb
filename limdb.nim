@@ -1,3 +1,4 @@
+## .. include:: docs.rst
 
 # this is mainly here to temporarily store form data after each keystroke
 # it probably doesn't matter at the likely scale of usage, but it just seems
@@ -49,9 +50,18 @@ proc del*(t: Transaction, key, value: string) =
   # a key's value with another put
   lmdb.del(t.txn, t.dbi, key, value)
 
-proc del*(t: Transaction, key: string) =
+template del*(t: Transaction, key: string) =
   # shortcut here to just get rid of one of the values
   lmdb.del(t.txn, t.dbi, key, lmdb.get(t.txn, t.dbi, key))
+
+proc hasKey*(t: Transaction, key: string): bool =
+  var key = key
+  var k = Val(mvSize: key.len.uint, mvData: key.cstring)
+  var dummy:Val
+  return 0 == get(t.txn, t.dbi, addr(k), addr(dummy))
+
+proc contains*(t: Transaction, key: string): bool =
+  hasKey(t, key)
 
 proc commit*(t: Transaction) =
   t.txn.commit()
@@ -92,4 +102,12 @@ proc del*(db: Database, key: string) =
     t.reset()
     raise
   t.commit()
+
+proc hasKey*(db: Database, key: string):bool =
+  let t = db.initTransaction()
+  result = t.hasKey(key)
+  t.reset()
+
+proc contains*(db: Database, key:string):bool =
+  hasKey(db, key)
 
