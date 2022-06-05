@@ -17,7 +17,7 @@
 <link href='https://fonts.googleapis.com/css?family=Source+Code+Pro:400,500,600' rel='stylesheet' type='text/css'/>
 
 <!-- CSS -->
-<title>limdb</title>
+<title>LimDB</title>
 <link rel="stylesheet" type="text/css" href="nimdoc.out.css">
 
 <script type="text/javascript" src="dochack.js"></script>
@@ -62,7 +62,7 @@ function main() {
 <body onload="main()">
 <div class="document" id="documentId">
   <div class="container">
-    <h1 class="title">limdb</h1>
+    <h1 class="title">LimDB</h1>
     <div class="row">
   <div class="three columns">
   <div class="theme-switch-wrapper">
@@ -94,8 +94,9 @@ function main() {
 <li><a class="reference" id="whyqmark_toc" href="#whyqmark">Why?</a></li>
 <li><a class="reference" id="simple-usage_toc" href="#simple-usage">Simple Usage</a></li>
 <li><a class="reference" id="transactions_toc" href="#transactions">Transactions</a></li>
+<li><a class="reference" id="iterators_toc" href="#iterators">Iterators</a></li>
 <li><a class="reference" id="named-databases_toc" href="#named-databases">Named Databases</a></li>
-<li><a class="reference" id="why-is-it-called-limdbqmark_toc" href="#why-is-it-called-limdbqmark">Why is it called limdb?</a></li>
+<li><a class="reference" id="why-is-it-called-limdbqmark_toc" href="#why-is-it-called-limdbqmark">Why is it called LimDB?</a></li>
 <li>
   <a class="reference reference-toplevel" href="#7" id="57">Types</a>
   <ul class="simple simple-toc-section">
@@ -127,6 +128,11 @@ function main() {
     title="`[]=`(t: Transaction; key, value: string)">[]=,<wbr>Transaction,<wbr>string,<wbr>string</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">clear
+      <li><a class="reference" href="#clear%2CDatabase"
+    title="clear(db: Database)">clear,<wbr>Database</a></li>
+
+  </ul>
   <ul class="simple nested-toc-section">commit
       <li><a class="reference" href="#commit%2CTransaction"
     title="commit(t: Transaction)">commit,<wbr>Transaction</a></li>
@@ -137,6 +143,11 @@ function main() {
     title="contains(db: Database; key: string): bool">contains,<wbr>Database,<wbr>string</a></li>
   <li><a class="reference" href="#contains%2CTransaction%2Cstring"
     title="contains(t: Transaction; key: string): bool">contains,<wbr>Transaction,<wbr>string</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">copy
+      <li><a class="reference" href="#copy%2CDatabase%2Cstring"
+    title="copy(db: Database; filename: string)">copy,<wbr>Database,<wbr>string</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">del
@@ -181,9 +192,41 @@ function main() {
   </ul>
 </li>
 <li>
+  <a class="reference reference-toplevel" href="#15" id="65">Iterators</a>
+  <ul class="simple simple-toc-section">
+      <ul class="simple nested-toc-section">keys
+      <li><a class="reference" href="#keys.i%2CDatabase"
+    title="keys(db: Database): string">keys.i,<wbr>Database</a></li>
+  <li><a class="reference" href="#keys.i%2CTransaction"
+    title="keys(t: Transaction): string">keys.i,<wbr>Transaction</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">pairs
+      <li><a class="reference" href="#pairs.i%2CDatabase"
+    title="pairs(db: Database): (string, string)">pairs.i,<wbr>Database</a></li>
+  <li><a class="reference" href="#pairs.i%2CTransaction"
+    title="pairs(t: Transaction): (string, string)">pairs.i,<wbr>Transaction</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">values
+      <li><a class="reference" href="#values.i%2CDatabase"
+    title="values(db: Database): string">values.i,<wbr>Database</a></li>
+  <li><a class="reference" href="#values.i%2CTransaction"
+    title="values(t: Transaction): string">values.i,<wbr>Transaction</a></li>
+
+  </ul>
+
+  </ul>
+</li>
+<li>
   <a class="reference reference-toplevel" href="#18" id="68">Templates</a>
   <ul class="simple simple-toc-section">
-      <ul class="simple nested-toc-section">del
+      <ul class="simple nested-toc-section">clear
+      <li><a class="reference" href="#clear.t%2CTransaction"
+    title="clear(t: Transaction)">clear.t,<wbr>Transaction</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">del
       <li><a class="reference" href="#del.t%2CTransaction%2Cstring"
     title="del(t: Transaction; key: string)">del.t,<wbr>Transaction,<wbr>string</a></li>
 
@@ -198,17 +241,24 @@ function main() {
   <div class="nine columns" id="content">
   <div id="tocRoot"></div>
   
-  <p class="module-desc"><p>Fast in-process key-value store with a table-like interface backed by lmdb.</p>
+  <p class="module-desc"><p>Fast, in-process key-value store with a table-like interface persisted to disk using lmdb.</p>
 
-<h1><a class="toc-backref" id="whyqmark" href="#whyqmark">Why?</a></h1><p>Memory-mapped files are one of the fastest ways to store data but are not thread-safe or consistent, which is solved keeping most of the speed by a mature database project called lmdb. Using the excellent nim-lmdb, limdb makes a sub-set of lmdb features familiar to use by resembling a persistent Nim table.</p>
+<h1><a class="toc-backref" id="whyqmark" href="#whyqmark">Why?</a></h1><p>Memory-mapped files are one of the fastest ways to store data but are not safe to access concurrently. Lmdb is a proven and mature to solution to that problem, offering full compliance to ACID3, a common standard for database reliability, while keeping most of the speed.</p>
+<p>Leveraging the excellent nim-lmdb interface, LimDB makes a larg-ish sub-set of lmdb features available in an interface familiar to Nim users who have experience with a table.</p>
+<p>While programming with LimDB feels like using a table, it is still very much lmdb. Some common boilerplate is automated and LimDB is clever about bundling lmdb's moving parts, but there are no bolted-on bits or obscuring of lmdb's behavior.</p>
 
-<h1><a class="toc-backref" id="simple-usage" href="#simple-usage">Simple Usage</a></h1><p>limdb acts similarly to a Nim table, except that you specify a storage location on creation.</p>
+<h1><a class="toc-backref" id="simple-usage" href="#simple-usage">Simple Usage</a></h1><p>Provide LimDB with a local storage directory and then use it like you would use a table. After inserting the element, it's on disk an can be accessed even after the program is restarted, or concurrently by different threads or processes.</p>
 <pre class="listing"><span class="Keyword">import</span> <span class="Identifier">limdb</span>
 <span class="Keyword">let</span> <span class="Identifier">db</span> <span class="Operator">=</span> <span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myDirectory&quot;</span><span class="Punctuation">)</span>
-<span class="Identifier">db</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;bar&quot;</span>  <span class="Comment"># that's it, foo -&gt; bar is now on disk</span></pre><p>If you just need to quickly save some data, you can stop reading here.</p>
+<span class="Identifier">db</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;bar&quot;</span>  <span class="Comment"># that's it, foo -&gt; bar is now on disk</span>
+<span class="Identifier">echo</span> <span class="Identifier">db</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span>     <span class="Comment"># prints bar</span></pre><p>Now if you comment out the write, you can run the program again and read the value off disk</p>
+<pre class="listing"><span class="Keyword">import</span> <span class="Identifier">limdb</span>
+<span class="Keyword">let</span> <span class="Identifier">db</span> <span class="Operator">=</span> <span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myDirectory&quot;</span><span class="Punctuation">)</span>
+<span class="Comment"># db[&quot;foo&quot;] = &quot;bar&quot;</span>
+<span class="Identifier">echo</span> <span class="Identifier">db</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span>  <span class="Comment"># also prints &quot;bar&quot;</span></pre><p>That's it. If you just need to quickly save some data, you can stop reading here and start programming.</p>
 
-<h1><a class="toc-backref" id="transactions" href="#transactions">Transactions</a></h1><p>Transactions are supported, so read or written data will be consistent even if concurrently.</p>
-<p>Writes are grouped so either all writes of a transaction are performe or none at all.</p>
+<h1><a class="toc-backref" id="transactions" href="#transactions">Transactions</a></h1><p>Sometimes you need to read or write to the database in several related ways that are best done as a group. This is a common database concept and most databases support them. Reads and writes grouped in this way are gauranteed not to be affected by other writes happening at the same time. Also, all writes are completed at once after the transaction, and if there is an error, no writes happen at all. This goes a long way towards not messing up your data.</p>
+<p>A transaction is started using <tt class="docutils literal"><span class="pre"><span class="Identifier">initTransaction</span></span></tt>, and stopped with either <tt class="docutils literal"><span class="pre"><span class="Identifier">reset</span></span></tt> or <tt class="docutils literal"><span class="pre"><span class="Identifier">commit</span></span></tt>. Use <tt class="docutils literal"><span class="pre"><span class="Identifier">reset</span></span></tt> if you only read data, or you want to throw away all writes. Use <tt class="docutils literal"><span class="pre"><span class="Identifier">commit</span></span></tt> to actually perform all the writes.</p>
 <pre class="listing"><span class="Keyword">import</span> <span class="Identifier">limdb</span>
 <span class="Keyword">let</span> <span class="Identifier">db</span> <span class="Operator">=</span> <span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myDirectory&quot;</span><span class="Punctuation">)</span>
 <span class="Keyword">let</span> <span class="Identifier">t</span> <span class="Operator">=</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">initTransaction</span>
@@ -224,19 +274,54 @@ function main() {
 <span class="Keyword">let</span> <span class="Identifier">t</span> <span class="Operator">=</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">initTransaction</span>
 <span class="Identifier">echo</span> <span class="Identifier">t</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span>
 <span class="Identifier">echo</span> <span class="Identifier">t</span><span class="Punctuation">[</span><span class="StringLit">&quot;bar&quot;</span><span class="Punctuation">]</span>
-<span class="Identifier">t</span><span class="Operator">.</span><span class="Identifier">reset</span><span class="Punctuation">(</span><span class="Punctuation">)</span>  <span class="Comment"># read-only transactions are always reset</span></pre>
+<span class="Identifier">t</span><span class="Operator">.</span><span class="Identifier">reset</span><span class="Punctuation">(</span><span class="Punctuation">)</span>  <span class="Comment"># read-only transactions are always reset</span></pre><div class="admonition admonition-warning"><span class="admonition-warning-text"><b>Caution:</b></span>
+Make sure to reset transactions when exceptions are thrown. If you use a database object directly without calling <tt class="docutils literal"><span class="pre"><span class="Identifier">initTransaction</span></span></tt>, LimDB handles this for you.</div>
+
+<h1><a class="toc-backref" id="iterators" href="#iterators">Iterators</a></h1><p>While you can access any data using the keys, you might want all of the data or not know the keys. You can use the usual <tt class="docutils literal"><span class="pre"><span class="Identifier">keys</span></span></tt>, <tt class="docutils literal"><span class="pre"><span class="Identifier">values</span></span></tt> and <tt class="docutils literal"><span class="pre"><span class="Identifier">pairs</span></span></tt> iterators with a LimDB. They can be used standalone on a database or as part of a transaciton.</p>
+<blockquote><p><pre class="listing"><span class="Keyword">import</span> <span class="Identifier">limdb</span>
+<span class="Keyword">let</span> <span class="Identifier">db</span> <span class="Operator">=</span> <span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myDirectory&quot;</span><span class="Punctuation">)</span>
+<span class="Keyword">let</span> <span class="Identifier">t</span> <span class="Operator">=</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">initTransaction</span>
+<span class="Identifier">t</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;bar&quot;</span>
+<span class="Identifier">t</span><span class="Punctuation">[</span><span class="StringLit">&quot;fuz&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;buz&quot;</span>
+<span class="Identifier">t</span><span class="Operator">.</span><span class="Identifier">commit</span><span class="Punctuation">(</span><span class="Punctuation">)</span>
+
+<span class="Keyword">for</span> <span class="Identifier">key</span> <span class="Keyword">in</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">keys</span><span class="Punctuation">:</span>
+    <span class="Identifier">echo</span> <span class="Identifier">key</span>
+<span class="Comment"># prints:</span>
+<span class="Comment"># foo</span>
+<span class="Comment"># fuz</span>
+
+<span class="Keyword">let</span> <span class="Identifier">t</span> <span class="Operator">=</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">initTransaction</span><span class="Punctuation">(</span><span class="Punctuation">)</span>
+<span class="Keyword">for</span> <span class="Identifier">value</span> <span class="Keyword">in</span> <span class="Identifier">t</span><span class="Operator">.</span><span class="Identifier">values</span><span class="Punctuation">:</span>
+    <span class="Identifier">echo</span> <span class="Identifier">value</span>
+<span class="Identifier">t</span><span class="Operator">.</span><span class="Identifier">reset</span><span class="Punctuation">(</span><span class="Punctuation">)</span>
+<span class="Comment"># prints:</span>
+<span class="Comment"># bar</span>
+<span class="Comment"># buz</span>
+
+<span class="Keyword">for</span> <span class="Identifier">key</span><span class="Punctuation">,</span> <span class="Identifier">value</span> <span class="Keyword">in</span> <span class="Identifier">db</span><span class="Punctuation">:</span>
+    <span class="Identifier">echo</span> <span class="StringLit">&quot;$# -&gt; $#&quot;</span> <span class="Operator">%</span> <span class="Punctuation">(</span><span class="Identifier">key</span><span class="Punctuation">,</span> <span class="Identifier">value</span><span class="Punctuation">)</span>
+
+<span class="Comment"># prints:</span>
+<span class="Comment"># foo -&gt; bar</span>
+<span class="Comment"># fuz -&gt; buz</span></pre></p></blockquote>
+
 <h1><a class="toc-backref" id="named-databases" href="#named-databases">Named Databases</a></h1><p>More than one database can be placed in the same storage location. No keys or values are shared between databases, so the key foo will remain empty in database B if it is set in database A.</p>
 <p>To access more than one database in the same Nim program, create an additional database from an existing one. The connection and storage location will be shared.</p>
 <p>The default database, the one used in the examples above, also has a name, an empty string <tt class="docutils literal"><span class="pre"><span class="StringLit">&quot;&quot;</span></span></tt>.</p>
-<blockquote><p><p>import limdb let db = initDatabase(&quot;myDirectory&quot;)</p>
-<p>let db2 = db.initDatabase(&quot;myName&quot;)</p>
-<p>db[&quot;foo&quot;] = &quot;bar&quot; db2[&quot;foo&quot;] = &quot;another bar</p>
-</p></blockquote>
-<p>Database objects created from other database objects do not differ from ones created directly from a filename.</p>
-<p>Only one database may be initialized from the same storage location, additional ones can be created from it.</p>
+<pre class="listing"><span class="Keyword">import</span> <span class="Identifier">limdb</span>
+<span class="Keyword">let</span> <span class="Identifier">db</span> <span class="Operator">=</span> <span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myDirectory&quot;</span><span class="Punctuation">)</span>
 
-<h1><a class="toc-backref" id="why-is-it-called-limdbqmark" href="#why-is-it-called-limdbqmark">Why is it called limdb?</a></h1><p>Limdb was originally named Limroddb after the ancient king Nimrod's younger sibling, Limrod, who didn't make it into the history books because of his diminuitive stature. It was renamed Limdb for marketing reasons.</p>
-<p>It also sounds a little like a vaguely pleasing jumble of Nim and Lmdb.</p>
+<span class="Keyword">let</span> <span class="Identifier">db2</span> <span class="Operator">=</span> <span class="Identifier">db</span><span class="Operator">.</span><span class="Identifier">initDatabase</span><span class="Punctuation">(</span><span class="StringLit">&quot;myName&quot;</span><span class="Punctuation">)</span>
+
+<span class="Identifier">db</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;bar&quot;</span>
+<span class="Identifier">db2</span><span class="Punctuation">[</span><span class="StringLit">&quot;foo&quot;</span><span class="Punctuation">]</span> <span class="Operator">=</span> <span class="StringLit">&quot;another bar</span></pre><p>Database objects created from other database objects do not differ from ones created directly from a filename.</p>
+<p>Only one database may be initialized from the same storage location, additional ones can be created from it.</p>
+<div class="admonition admonition-warning"><span class="admonition-warning-text"><b>Caution:</b></span>
+If you use named databases, their names will appear as keys in the default database, The one named empty string <tt class="docutils literal"><span class="pre"><span class="StringLit">&quot;&quot;</span></span></tt>. In this case it is usually best not to use the default database for anything else, and iterate over the default databases' keys to get a list of named databases.</div>
+
+<h1><a class="toc-backref" id="why-is-it-called-limdbqmark" href="#why-is-it-called-limdbqmark">Why is it called LimDB?</a></h1><p>LimDB was originally named LimrodDB after the ancient king Nimrod's younger sibling, Limrod, who didn't make it into the history books because he was short. It was later renamed LimDB for marketing reasons.</p>
+<p>By a wild coincidence, it also sounds a little like a vaguely pleasing jumble of Nim and LMDB.</p>
 </p>
   <div class="section" id="7">
 <h1><a class="toc-backref" href="#7">Types</a></h1>
@@ -248,7 +333,7 @@ function main() {
 </pre></dt>
 <dd>
 
-
+A key-value database in a memory-mapped on-disk storage location.
 
 </dd>
 <a id="Transaction"></a>
@@ -258,7 +343,7 @@ function main() {
 </pre></dt>
 <dd>
 
-
+A transaction may be created and reads or writes performed on it instead of directly on a database object. That way, reads or writes are not affected by other writes happening at the same time, and changes happen all at once at the end or not at all.
 
 </dd>
 
@@ -271,6 +356,7 @@ function main() {
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Set a value in the database .. note:<pre>This inits and commits a transaction under the hood</pre>
 
 
 </dd>
@@ -286,6 +372,7 @@ function main() {
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Fetch a value in the database .. note:<pre>This inits and resets a transaction under the hood</pre>
 
 
 </dd>
@@ -296,25 +383,40 @@ function main() {
 
 
 </dd>
+<a id="clear,Database"></a>
+<dt><pre><span class="Keyword">proc</span> <a href="#clear%2CDatabase"><span class="Identifier">clear</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Remove all key-values pairs from the database, emptying it. .. note:<pre>This creates and commits a transaction under the hood</pre>
+
+
+</dd>
 <a id="commit,Transaction"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#commit%2CTransaction"><span class="Identifier">commit</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+Commit a transaction. This writes all changes made in the transaction to disk.
 
 </dd>
 <a id="contains,Database,string"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#contains%2CDatabase%2Cstring"><span class="Identifier">contains</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+Alias for hasKey to support <tt class="docutils literal"><span class="pre"><span class="Keyword">in</span></span></tt> syntax in transactions
 
 </dd>
 <a id="contains,Transaction,string"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#contains%2CTransaction%2Cstring"><span class="Identifier">contains</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Alias for hasKey to support <tt class="docutils literal"><span class="pre"><span class="Keyword">in</span></span></tt> syntax
 
+</dd>
+<a id="copy,Database,string"></a>
+<dt><pre><span class="Keyword">proc</span> <a href="#copy%2CDatabase%2Cstring"><span class="Identifier">copy</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">filename</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Copy a database to a different directory. This also performs routine database maintenance so the resulting file with usually be smaller. This is best performed when no one is writing to the database directory.
 
 </dd>
 <a id="del,Database,string,string"></a>
@@ -322,6 +424,7 @@ function main() {
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Delete a key-value pair in the database .. note:<pre>This inits and commits a transaction under the hood</pre>
 
 
 </dd>
@@ -329,6 +432,9 @@ function main() {
 <dt><pre><span class="Keyword">proc</span> <a href="#del%2CDatabase%2Cstring"><span class="Identifier">del</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Deletes a value in the database .. note:<pre>This inits and commits a transaction under the hood</pre>
+<div class="admonition admonition-info"><span class="admonition-info-text"><b>Note:</b></span>
+LMDB requires you to delete by key and value. This proc fetches the value for you, giving you the more familiar interface.</div>
 
 
 </dd>
@@ -336,21 +442,21 @@ function main() {
 <dt><pre><span class="Keyword">proc</span> <a href="#del%2CTransaction%2Cstring%2Cstring"><span class="Identifier">del</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">value</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+Delete a key-value pair
 
 </dd>
 <a id="hasKey,Database,string"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#hasKey%2CDatabase%2Cstring"><span class="Identifier">hasKey</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+See if a key exists without fetching any data in a transaction
 
 </dd>
 <a id="hasKey,Transaction,string"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#hasKey%2CTransaction%2Cstring"><span class="Identifier">hasKey</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+See if a key exists without fetching any data
 
 </dd>
 <a id="initDatabase,Database,string"></a>
@@ -358,7 +464,7 @@ function main() {
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+Open another database of a different name in an already-connected on-disk storage location.
 
 </dd>
 <a id="initDatabase,string,string,int"></a>
@@ -366,13 +472,18 @@ function main() {
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">WriteDirEffect</span><span class="Other">,</span> <span class="Identifier">ReadDirEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+Connect to an on-disk storage location and open a database. If the path does not exist, a directory will be created.
 
 </dd>
 <a id="initTransaction,Database"></a>
 <dt><pre><span class="Keyword">proc</span> <a href="#initTransaction%2CDatabase"><span class="Identifier">initTransaction</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">)</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+<p>Start a transaction from a database.</p>
+<p>Reads and writes on the transaction will reflect the same point in time and will not be affected by other writes.</p>
+<p>After reads, <tt class="docutils literal"><span class="pre"><span class="Identifier">reset</span></span></tt> must be called on the transaction. After writes, <tt class="docutils literal"><span class="pre"><span class="Identifier">commit</span></span></tt> must be called to perform all of the writes, or <tt class="docutils literal"><span class="pre"><span class="Identifier">reset</span></span></tt> to perform none of them.</p>
+<div class="admonition admonition-warning"><span class="admonition-warning-text"><b>Caution:</b></span>
+Calling neither <tt class="docutils literal"><span class="pre"><span class="Identifier">reset</span></span></tt> nor <tt class="docutils literal"><span class="pre"><span class="Identifier">commit</span></span></tt> on a transaction can block database access. This commonly happens when an exception is raised.</div>
 
 
 </dd>
@@ -387,7 +498,60 @@ function main() {
 <dt><pre><span class="Keyword">proc</span> <a href="#reset%2CTransaction"><span class="Identifier">reset</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
+Reset a transaction. This throws away all changes made in the transaction. After only reading in a transaction, reset it as well. .. note:<pre>This is called `reset` because that is a pleasant and familiar term for reverting
+changes. The term differs from LMDB though, under the hood this calles `mdb_abort`,
+not `mdb_reset`- the latter does something else not covered by LimDB.</pre>
 
+
+</dd>
+
+</dl></div>
+<div class="section" id="15">
+<h1><a class="toc-backref" href="#15">Iterators</a></h1>
+<dl class="item">
+<a id="keys.i,Database"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#keys.i%2CDatabase"><span class="Identifier">keys</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all keys pairs in a database. .. note:<pre>This inits and resets a transaction under the hood</pre>
+
+
+</dd>
+<a id="keys.i,Transaction"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#keys.i%2CTransaction"><span class="Identifier">keys</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all keys in a database with a transaction
+
+</dd>
+<a id="pairs.i,Database"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#pairs.i%2CDatabase"><span class="Identifier">pairs</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Other">(</span><span class="Identifier">string</span><span class="Other">,</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all values in a database .. note:<pre>This inits and resets a transaction under the hood</pre>
+
+
+</dd>
+<a id="pairs.i,Transaction"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#pairs.i%2CTransaction"><span class="Identifier">pairs</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Other">(</span><span class="Identifier">string</span><span class="Other">,</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all key-value pairs in a database with a transaction.
+
+</dd>
+<a id="values.i,Database"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#values.i%2CDatabase"><span class="Identifier">values</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all values in a database .. note:<pre>This inits and resets a transaction under the hood</pre>
+
+
+</dd>
+<a id="values.i,Transaction"></a>
+<dt><pre><span class="Keyword">iterator</span> <a href="#values.i%2CTransaction"><span class="Identifier">values</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Iterate over all values in a database with a transaction.
 
 </dd>
 
@@ -395,10 +559,21 @@ function main() {
 <div class="section" id="18">
 <h1><a class="toc-backref" href="#18">Templates</a></h1>
 <dl class="item">
+<a id="clear.t,Transaction"></a>
+<dt><pre><span class="Keyword">template</span> <a href="#clear.t%2CTransaction"><span class="Identifier">clear</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">)</span></pre></dt>
+<dd>
+
+Remove all key-values pairs from the database, emptying it. .. note:<pre>The size of the database will stay the same on-disk but won't grow until
+more data than was in there before is added. It will shrink if it is copied.</pre>
+
+
+</dd>
 <a id="del.t,Transaction,string"></a>
 <dt><pre><span class="Keyword">template</span> <a href="#del.t%2CTransaction%2Cstring"><span class="Identifier">del</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span></pre></dt>
 <dd>
 
+Delete a value in a transaction .. note:<pre>LMDB requires you to delete by key and value. This proc fetches
+the value for you, giving you the more familiar interface.</pre>
 
 
 </dd>
@@ -412,7 +587,7 @@ function main() {
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-06-05 10:39:38 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-06-05 20:52:32 UTC</small>
       </div>
     </div>
   </div>
