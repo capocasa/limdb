@@ -84,6 +84,8 @@ Iterators
 
 While you can access any data using the keys, you might want all of the data or not know the keys. You can use the usual `keys`, `values` and `pairs` iterators with a LimDB. They can be used standalone on a database or as part of a transaciton.
 
+You can also use `mvalues` and `mpairs` to modify values on the go.
+
    .. code-block:: nim
 
     import limdb
@@ -94,25 +96,42 @@ While you can access any data using the keys, you might want all of the data or 
     t.commit()
 
     for key in db.keys:
-        echo key
+      echo key
     # prints:
     # foo
     # fuz
     
     let t = db.initTransaction()
     for value in t.values:
-        echo value
+      echo value
     t.reset()
     # prints:
     # bar
     # buz
 
     for key, value in db:
-        echo "$# -> $#" % (key, value)
+      echo "$# -> $#" % (key, value)
 
     # prints:
     # foo -> bar
     # fuz -> buz
+
+    for value in db.mvalues:
+      if value == "fuz":
+        value = "buzz"
+
+    t.initTransaction
+    for key, value in t.mpairs:
+      if key == "foo":
+        value = "barz"
+    t.commit()
+ 
+    for key, value in db:
+      echo "$# -> $#" % (key, value)
+
+    # prints:
+    # foo -> barz
+    # fuz -> buzz
 
 
 Named Databases
@@ -145,6 +164,19 @@ Only one database may be initialized from the same storage location, additional 
     The one named empty string `""`.
     In this case it is usually best not to use the default database for anything else,
     and iterate over the default databases' keys to get a list of named databases.
+
+Limitations
+###########
+
+Only strings are supported as data types, for now. In order to save other data types, they can be serialized to strings.
+
+Improvements
+############
+
+* Use generics to support any data type that a `toBlob` and `fromBlob` can be written for. Possibly keep string versions as a shortcut.
+* Use Nim views to provide an alternative interface allowing safe zero-copy data access in with Nim data types (lmdb itself does not copy data when accessing)
+* Useful iterators: `keysFrom`, `keysBetween`, other common usage of lmdb cursors
+* Map lmdb multipe values per key feature to something Nimish, perhaps iterators or seqs
 
 Why is it called LimDB?
 #######################
