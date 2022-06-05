@@ -66,6 +66,7 @@ proc initTransaction*(db: Database): Transaction =
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
+  ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
   result.mvSize = s.len.uint
@@ -73,6 +74,7 @@ proc toBlob*(s: string): Blob =
 
 proc fromBlob*(b: Blob): string =
   ## Convert a chunk of data, key or value, to a string
+  ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
   result = newStringOfCap(b.mvSize)
@@ -119,6 +121,7 @@ proc del*(t: Transaction, key, value: string) =
 
 template del*(t: Transaction, key: string) =
   ## Delete a value in a transaction
+  ##
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
@@ -141,6 +144,7 @@ template commit*(t: Transaction) =
 template reset*(t: Transaction) =
   ## Reset a transaction. This throws away all changes made in the transaction.
   ## After only reading in a transaction, reset it as well.
+  ##
   ## .. note::
   ##     This is called `reset` because that is a pleasant and familiar term for reverting
   ##     changes. The term differs from LMDB though, under the hood this calles `mdb_abort`,
@@ -149,6 +153,7 @@ template reset*(t: Transaction) =
 
 proc `[]`*(db: Database, key: string): string =
   ## Fetch a value in the database
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -159,6 +164,7 @@ proc `[]`*(db: Database, key: string): string =
 
 proc `[]=`*(d: Database, key, value: string) =
   ## Set a value in the database
+  ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
   let t = d.initTransaction
@@ -171,6 +177,7 @@ proc `[]=`*(d: Database, key, value: string) =
 
 proc del*(db: Database, key, value: string) =
   ## Delete a key-value pair in the database
+  ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
   let t = db.initTransaction
@@ -183,8 +190,10 @@ proc del*(db: Database, key, value: string) =
 
 proc del*(db: Database, key: string) =
   ## Deletes a value in the database
+  ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
+  ##
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
@@ -337,6 +346,7 @@ template len*(t: Transaction): int =
 
 iterator keys*(db: Database): string =
   ## Iterate over all keys pairs in a database.
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -346,6 +356,7 @@ iterator keys*(db: Database): string =
 
 iterator values*(db: Database): string =
   ## Iterate over all values in a database
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -355,6 +366,7 @@ iterator values*(db: Database): string =
 
 iterator pairs*(db: Database): (string, string) =
   ## Iterate over all values in a database
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -364,6 +376,7 @@ iterator pairs*(db: Database): (string, string) =
 
 iterator mvalues*(db: Database): var string =
   ## Iterate over all values in a database allowing modification
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -374,6 +387,7 @@ iterator mvalues*(db: Database): var string =
 iterator mpairs*(db: Database): (string, var string) =
   ## Iterate over all key-value pairs in a database allowing the values
   ## to be modified
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -383,6 +397,7 @@ iterator mpairs*(db: Database): (string, var string) =
 
 proc len*(db: Database): int =
   ## Returns the number of key-value pairs in the database.
+  ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
@@ -399,6 +414,7 @@ proc copy*(db: Database, filename: string) =
 
 template clear*(t: Transaction) =
   ## Remove all key-values pairs from the database, emptying it.
+  ##
   ## .. note::
   ##     The size of the database will stay the same on-disk but won't grow until
   ##     more data than was in there before is added. It will shrink if it is copied.
@@ -406,6 +422,7 @@ template clear*(t: Transaction) =
 
 proc clear*(db: Database) =
   ## Remove all key-values pairs from the database, emptying it.
+  ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
   let t = db.initTransaction
@@ -415,6 +432,7 @@ proc clear*(db: Database) =
 template close*(db: Database) =
   ## Close the database directory. This will free up some memory and make all databases
   ## that were created from the same directory unavailable. This is not necessary for many use cases.
+  ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
   envClose(db.env)

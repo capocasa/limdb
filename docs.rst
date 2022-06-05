@@ -170,8 +170,8 @@ Limitations
 
 Only strings are supported as data types, for now. In order to save other data types, they can be serialized to strings.
 
-Improvements
-############
+Improvement Areas Of Interest
+#############################
 
 * Use generics to support any data type that a `toBlob` and `fromBlob` can be written for. Possibly keep string versions as a shortcut.
 * Use Nim views to provide an alternative interface allowing safe zero-copy data access in with Nim data types (lmdb itself does not copy data when accessing)
