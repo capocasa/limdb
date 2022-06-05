@@ -86,13 +86,35 @@ block:
   var s:seq[string]
   for key in db2.keys:
     s.add(key)
-  assert s == @["foo", "fooo", "fuuz", "fuz"], "iterate over keys in order with transaction"
+  assert s == @["foo", "fooo", "fuuz", "fuz"], "iterate over keys in order"
 
 block:
   let t = db2.initTransaction()
   var s:seq[string]
   for key in t.keys:
     s.add(key)
+  t.reset()
   assert s == @["foo", "fooo", "fuuz", "fuz"], "iterate over keys in order with transaction"
 
+block:
+  var s:seq[string]
+  for value in db2.values:
+    s.add(value)
+  assert s == @["bar", "baar", "buuz", "buz"], "iterate over values in order"
 
+block:
+  let t = db2.initTransaction()
+  var s:seq[string]
+  for value in t.values:
+    s.add(value)
+  t.reset()
+  assert s == @["bar", "baar", "buuz", "buz"], "iterate over values in order"
+
+block:
+  var k:seq[string]
+  var v:seq[string]
+  for key, value in db2:
+    k.add(key)
+    v.add(value)
+  assert k == @["foo", "fooo", "fuuz", "fuz"], "iterate over pairs in order, keys"
+  assert v == @["bar", "baar", "buuz", "buz"], "iterate over pairs in order, values"
