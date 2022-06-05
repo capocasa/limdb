@@ -126,20 +126,19 @@ template del*(t: Transaction, key: string) =
 
 proc hasKey*(t: Transaction, key: string): bool =
   ## See if a key exists without fetching any data
-  var key = key
-  var k = Blob(mvSize: key.len.uint, mvData: key.cstring)
-  var dummy:Blob
-  return 0 == get(t.txn, t.dbi, addr(k), addr(dummy))
+  var key = key.toBlob
+  var dummyData:Blob
+  return 0 == get(t.txn, t.dbi, addr(key), addr(dummyData))
 
-proc contains*(t: Transaction, key: string): bool =
+template contains*(t: Transaction, key: string): bool =
   ## Alias for hasKey to support `in` syntax
   hasKey(t, key)
 
-proc commit*(t: Transaction) =
+template commit*(t: Transaction) =
   ## Commit a transaction. This writes all changes made in the transaction to disk.
   t.txn.commit()
 
-proc reset*(t: Transaction) =
+template reset*(t: Transaction) =
   ## Reset a transaction. This throws away all changes made in the transaction.
   ## After only reading in a transaction, reset it as well.
   ## .. note::
@@ -203,7 +202,7 @@ proc hasKey*(db: Database, key: string):bool =
   result = t.hasKey(key)
   t.reset()
 
-proc contains*(db: Database, key:string):bool =
+template contains*(db: Database, key:string):bool =
   ## Alias for hasKey to support `in` syntax in transactions
   hasKey(db, key)
 
@@ -401,7 +400,7 @@ proc clear*(db: Database) =
   t.clear
   t.commit
 
-proc close(db: Database) =
+template close*(db: Database) =
   ## Close the database directory. This will free up some memory and make all databases
   ## that were created from the same directory unavailable. This is not necessary for many use cases.
   ## .. note::
