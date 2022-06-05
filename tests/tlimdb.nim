@@ -8,7 +8,9 @@
 import os
 import limdb
 
-let db = initDatabase(getTempDir() / "testlimdb")
+let testLocation = getTempDir() / "tlimdb"
+removeDir(testLocation)
+let db = initDatabase(testLocation)
 
 db["foo"] = "bar"
 assert db["foo"] == "bar", "write and read back"
@@ -71,5 +73,26 @@ block:
   let t = db2.initTransaction()
   doAssertRaises(Exception): discard t["fuz"]
   t.reset()
+
+block:
+  let t = db2.initTransaction()
+  t["foo"] = "bar"
+  t["fuz"] = "buz"
+  t["fooo"] = "baar"
+  t["fuuz"] = "buuz"
+  t.commit()
+
+block:
+  var s:seq[string]
+  for key in db2.keys:
+    s.add(key)
+  assert s == @["foo", "fooo", "fuuz", "fuz"], "iterate over keys in order with transaction"
+
+block:
+  let t = db2.initTransaction()
+  var s:seq[string]
+  for key in t.keys:
+    s.add(key)
+  assert s == @["foo", "fooo", "fuuz", "fuz"], "iterate over keys in order with transaction"
 
 
