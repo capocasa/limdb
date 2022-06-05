@@ -4,7 +4,7 @@ author        = "Carlo Capocasa"
 description   = "A persistent table-like object backed by lmdb"
 license       = "MIT"
 
-requires "lmdb"
+requires "lmdb == 0.1.2"
 
 task test, "Run tests":
     exec "nim c -r tests/tlimdb"

@@ -16,15 +16,18 @@ db["foo"] = "bar"
 assert db["foo"] == "bar", "write and read back"
 assert db.hasKey("foo"), "key exists op"
 assert "foo" in db, "in syntax"
+assert len(db) == 1, "length"
 
 db.del("foo")
 doAssertRaises(Exception): discard db["foo"]
 assert not db.hasKey("foo"), "key does not exist op"
 assert not ("foo" in db), "not in syntax"
+assert len(db) == 0, "length"
 
 block:
   let t = db.initTransaction()
   t["fuz"] = "buz"
+  assert len(t) == 1, "length with transaction"
   t.commit()
 
 block:
@@ -32,6 +35,7 @@ block:
   assert t["fuz"] == "buz", "write and read back with transaction"
   assert t.hasKey("fuz"), "key exists op with ransaction"
   assert "fuz" in t, "in syntax"
+  assert len(t) == 1, "length with transaction"
   t.reset()
 
 block:
@@ -44,6 +48,7 @@ block:
   doAssertRaises(Exception): discard t["fuz"]
   assert not t.hasKey("fuz"), "key does not exist op with transaction"
   assert not ("fuz" in t), "not in syntax with transaction"
+  assert len(t) == 0, "length with transaction"
   t.reset()
 
 let db2 = db.initDatabase("foodb")
@@ -133,3 +138,4 @@ block:
     v.add(value)
   assert v == @["bar", "baaa", "baaz", "buz"], "iterate over values and pairs, modifying one value each"
 
+  assert len(db2) == 4, "count length"

@@ -331,6 +331,10 @@ iterator mpairs*(t: Transaction): (string, var string) =
         cursor.cursorClose
         raise newException(Exception, $strerror(err))
 
+template len*(t: Transaction): int =
+  ## Returns the number of key-value pairs in the database.
+  stat(t.txn, t.dbi).msEntries.int
+
 iterator keys*(db: Database): string =
   ## Iterate over all keys pairs in a database.
   ## .. note::
@@ -376,6 +380,14 @@ iterator mpairs*(db: Database): (string, var string) =
   for k, v in t.mpairs:
     yield (k, v)
   t.commit()
+
+proc len*(db: Database): int =
+  ## Returns the number of key-value pairs in the database.
+  ## .. note::
+  ##     This inits and resets a transaction under the hood
+  let t = db.initTransaction
+  result = t.len
+  t.reset()
 
 proc copy*(db: Database, filename: string) =
   ## Copy a database to a different directory. This also performs routine database
