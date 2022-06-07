@@ -280,7 +280,6 @@ iterator mvalues*(t: Transaction): var string =
           yield d[]
           var mdata = d[].toBlob
           if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-            cursor.cursorClose
             raise newException(Exception, $strerror(err))
         elif err == lmdb.NOTFOUND:
           break
@@ -303,10 +302,8 @@ iterator pairs*(t: Transaction): (string, string) =
         if err == 0:
           yield (fromBlob(key), fromBlob(data))
         elif err == lmdb.NOTFOUND:
-          cursor.cursorClose
           break
         else:
-          cursor.cursorClose
           raise newException(Exception, $strerror(err))
   finally:
     cursor.cursorClose
