@@ -221,18 +221,19 @@ iterator keys*(t: Transaction): string =
   var key:Blob
   var data:Blob
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
-  if err == 0:
-    yield fromBlob(key)
-    while true:
-      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
-      if err == 0:
-        yield key.fromBlob
-      elif err == lmdb.NOTFOUND:
-        cursor.cursorClose
-        break
-      else:
-        cursor.cursorClose
-        raise newException(Exception, $strerror(err))
+  try:
+    if err == 0:
+      yield fromBlob(key)
+      while true:
+        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if err == 0:
+          yield key.fromBlob
+        elif err == lmdb.NOTFOUND:
+          break
+        else:
+          raise newException(Exception, $strerror(err))
+  finally:
+    cursor.cursorClose
 
 iterator values*(t: Transaction): string =
   ## Iterate over all values in a database with a transaction.
@@ -240,18 +241,19 @@ iterator values*(t: Transaction): string =
   var key:Blob
   var data:Blob
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
-  if err == 0:
-    yield fromBlob(data)
-    while true:
-      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
-      if err == 0:
-        yield fromBlob(data)
-      elif err == lmdb.NOTFOUND:
-        cursor.cursorClose
-        break
-      else:
-        cursor.cursorClose
-        raise newException(Exception, $strerror(err))
+  try:
+    if err == 0:
+      yield fromBlob(data)
+      while true:
+        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if err == 0:
+          yield fromBlob(data)
+        elif err == lmdb.NOTFOUND:
+          break
+        else:
+          raise newException(Exception, $strerror(err))
+  finally:
+    cursor.cursorClose
 
 iterator mvalues*(t: Transaction): var string =
   ## Iterate over all values in a database with a transaction, allowing
@@ -260,51 +262,54 @@ iterator mvalues*(t: Transaction): var string =
   var key:Blob
   var data:Blob
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
-  if err == 0:
-    var d: ref string
-    new(d)
-    d[] = fromBlob(data)
-    yield d[]
-    var mdata = d[].toBlob
-    if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-      cursor.cursorClose
-      raise newException(Exception, $strerror(err))
-    while true:
-      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
-      if err == 0:
-        var d:ref string
-        new(d)
-        d[] = fromBlob(data)
-        yield d[]
-        var mdata = d[].toBlob
-        if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-          cursor.cursorClose
-          raise newException(Exception, $strerror(err))
-      elif err == lmdb.NOTFOUND:
-        cursor.cursorClose
-        break
-      else:
-        cursor.cursorClose
+  try:
+    if err == 0:
+      var d: ref string
+      new(d)
+      d[] = fromBlob(data)
+      yield d[]
+      var mdata = d[].toBlob
+      if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
         raise newException(Exception, $strerror(err))
+      while true:
+        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if err == 0:
+          var d:ref string
+          new(d)
+          d[] = fromBlob(data)
+          yield d[]
+          var mdata = d[].toBlob
+          if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+            cursor.cursorClose
+            raise newException(Exception, $strerror(err))
+        elif err == lmdb.NOTFOUND:
+          break
+        else:
+          raise newException(Exception, $strerror(err))
+  finally:
+    cursor.cursorClose
 
 iterator pairs*(t: Transaction): (string, string) =
   ## Iterate over all key-value pairs in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
-  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
-  if err == 0:
-    yield (fromBlob(key), fromBlob(data))
-    while true:
-      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
-      if err == 0:
-        yield (fromBlob(key), fromBlob(data))
-      elif err == lmdb.NOTFOUND:
-        cursor.cursorClose
-        break
-      else:
-        cursor.cursorClose
-        raise newException(Exception, $strerror(err))
+  try:
+    let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+    if err == 0:
+      yield (fromBlob(key), fromBlob(data))
+      while true:
+        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if err == 0:
+          yield (fromBlob(key), fromBlob(data))
+        elif err == lmdb.NOTFOUND:
+          cursor.cursorClose
+          break
+        else:
+          cursor.cursorClose
+          raise newException(Exception, $strerror(err))
+  finally:
+    cursor.cursorClose
 
 iterator mpairs*(t: Transaction): (string, var string) =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
@@ -313,32 +318,31 @@ iterator mpairs*(t: Transaction): (string, var string) =
   var key:Blob
   var data:Blob
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
-  if err == 0:
-    var d: ref string
-    new(d)
-    d[] = data.fromBlob
-    yield (key.fromBlob, d[])
-    var mdata = d[].toBlob
-    if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-      cursor.cursorClose
-      raise newException(Exception, $strerror(err))
-    while true:
-      let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
-      if err == 0:
-        var d:ref string
-        new(d)
-        d[] = data.fromBlob
-        yield (key.fromBlob, d[])
-        var mdata = d[].toBlob
-        if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-          cursor.cursorClose
-          raise newException(Exception, $strerror(err))
-      elif err == lmdb.NOTFOUND:
-        cursor.cursorClose
-        break
-      else:
-        cursor.cursorClose
+  try:
+    if err == 0:
+      var d: ref string
+      new(d)
+      d[] = data.fromBlob
+      yield (key.fromBlob, d[])
+      var mdata = d[].toBlob
+      if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
         raise newException(Exception, $strerror(err))
+      while true:
+        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if err == 0:
+          var d:ref string
+          new(d)
+          d[] = data.fromBlob
+          yield (key.fromBlob, d[])
+          var mdata = d[].toBlob
+          if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
+            raise newException(Exception, $strerror(err))
+        elif err == lmdb.NOTFOUND:
+          break
+        else:
+          raise newException(Exception, $strerror(err))
+  finally:
+    cursor.cursorClose
 
 template len*(t: Transaction): int =
   ## Returns the number of key-value pairs in the database.
@@ -350,9 +354,11 @@ iterator keys*(db: Database): string =
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
-  for key in t.keys:
-    yield key
-  t.reset()
+  try:
+    for key in t.keys:
+      yield key
+  finally:
+    t.reset()
 
 iterator values*(db: Database): string =
   ## Iterate over all values in a database
@@ -360,9 +366,11 @@ iterator values*(db: Database): string =
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
-  for value in t.values:
-    yield value
-  t.reset()
+  try:
+    for value in t.values:
+      yield value
+  finally:
+    t.reset()
 
 iterator pairs*(db: Database): (string, string) =
   ## Iterate over all values in a database
@@ -370,9 +378,11 @@ iterator pairs*(db: Database): (string, string) =
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
-  for pair in t.pairs:
-    yield pair
-  t.reset()
+  try:
+    for pair in t.pairs:
+      yield pair
+  finally:
+    t.reset()
 
 iterator mvalues*(db: Database): var string =
   ## Iterate over all values in a database allowing modification
@@ -380,9 +390,11 @@ iterator mvalues*(db: Database): var string =
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
-  for value in t.mvalues:
-    yield value
-  t.commit()
+  try:
+    for value in t.mvalues:
+      yield value
+  finally:
+    t.commit()
 
 iterator mpairs*(db: Database): (string, var string) =
   ## Iterate over all key-value pairs in a database allowing the values
@@ -391,9 +403,11 @@ iterator mpairs*(db: Database): (string, var string) =
   ## .. note::
   ##     This inits and resets a transaction under the hood
   let t = db.initTransaction
-  for k, v in t.mpairs:
-    yield (k, v)
-  t.commit()
+  try:
+    for k, v in t.mpairs:
+      yield (k, v)
+  finally:
+    t.commit()
 
 proc len*(db: Database): int =
   ## Returns the number of key-value pairs in the database.
