@@ -36,11 +36,12 @@ proc open*(db: Database, name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(filename = "", name = "", maxdbs = 255): Database =
+proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760): Database =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
   result.env = newLMDBEnv(filename, maxdbs)
+  discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
 
 proc initDatabase*(db: Database, name = ""): Database =
