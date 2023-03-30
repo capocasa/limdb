@@ -449,4 +449,21 @@ template close*(db: Database) =
   ##     This creates and commits a transaction under the hood
   envClose(db.env)
 
+proc getOrDefault*(t: Transaction, key: string):string =
+  ## Read a value from a key in a transaction and return the provided default value if
+  ## it does not exist
+  try:
+    result = t[key]
+  except KeyError:
+    result = ""
+
+proc getOrDefault*(d: Database, key: string):string =
+  ## Fetch a value in the database and return the provided default value if it does not exist
+  let t = d.initTransaction
+  try:
+    result = t[key]
+  except KeyError:
+    result = ""
+  finally:
+    t.reset()
 
