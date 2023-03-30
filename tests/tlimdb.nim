@@ -51,7 +51,7 @@ block:
   assert len(t) == 0, "length with transaction"
   t.reset()
 
-let db2 = db.initDatabase("foodb")
+let db2 = db.initDatabase("db2")
 doAssertRaises(Exception): discard db2["foo"]
 
 db2["foo"] = "bar"
@@ -139,3 +139,17 @@ block:
   assert v == @["bar", "baaa", "baaz", "buz"], "iterate over values and pairs, modifying one value each"
 
   assert len(db2) == 4, "count length"
+
+block:
+  let db3 = db.initDatabase("db3")
+  assert db3.getOrDefault("foo", "bar") == "bar", "key does not exist, use default"
+  db3["foo"] = "fuz"
+  assert db3.getOrDefault("foo", "bar") == "fuz", "key there, use value"
+  db3.del("foo")
+
+  let t = db3.initTransaction()
+  assert t.getOrDefault("foo", "bar") == "bar", "key does not exist, use default, in transaction"
+  t["foo"] = "fuz"
+  assert t.getOrDefault("foo", "bar") == "fuz", "key there, use value, in transaction"
+  t.reset()
+
