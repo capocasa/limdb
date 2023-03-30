@@ -30,9 +30,9 @@ type
     ## is LMDB's native storage type- a block of memory. `string` types are converted automatically,
     ## and conversion for other data types can be added by adding `fromBlob` and `toBlob` for a type.
 
-proc open*(db: Database, name: string): Dbi =
+proc open*(d: Database, name: string): Dbi =
   # Open a database and return a low-level handle
-  let dummy = db.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
+  let dummy = d.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
@@ -44,12 +44,12 @@ proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760): Dat
   discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
 
-proc initDatabase*(db: Database, name = ""): Database =
+proc initDatabase*(d: Database, name = ""): Database =
   ## Open another database of a different name in an already-connected on-disk storage location.
-  result.env = db.env
+  result.env = d.env
   result.dbi = result.open(name)
 
-proc initTransaction*(db: Database): Transaction =
+proc initTransaction*(d: Database): Transaction =
   ## Start a transaction from a database.
   ##
   ## Reads and writes on the transaction will reflect the same
@@ -62,8 +62,8 @@ proc initTransaction*(db: Database): Transaction =
   ## .. caution::
   ##     Calling neither `reset` nor `commit` on a transaction can block database access.
   ##     This commonly happens when an exception is raised.
-  result.dbi = db.dbi
-  result.txn = db.env.newTxn()
+  result.dbi = d.dbi
+  result.txn = d.env.newTxn()
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -94,7 +94,7 @@ proc `[]`*(t: Transaction, key: string): string =
   else:
     raise newException(Exception, $strerror(err))
 
-proc `[]=`*(t: Transaction, key, value: string) =
+proc `[]=`*(t: var Transaction, key, value: string) =
   # Write a value to a key in a transaction
   var k = key.toBlob
   var v = value.toBlob
@@ -106,7 +106,7 @@ proc `[]=`*(t: Transaction, key, value: string) =
   else:
     raise newException(Exception, $strerror(err))
 
-proc del*(t: Transaction, key, value: string) =
+proc del*(t: var Transaction, key, value: string) =
   ## Delete a key-value pair
   # weird lmdb quirk, you delete with both key and value because you can "shadow"
   # a key's value with another put
@@ -120,7 +120,7 @@ proc del*(t: Transaction, key, value: string) =
   else:
     raise newException(Exception, $strerror(err))
 
-template del*(t: Transaction, key: string) =
+template del*(t: var Transaction, key: string) =
   ## Delete a value in a transaction
   ##
   ## .. note::
@@ -138,7 +138,7 @@ template contains*(t: Transaction, key: string): bool =
   ## Alias for hasKey to support `in` syntax
   hasKey(t, key)
 
-template commit*(t: Transaction) =
+template commit*(t: var Transaction) =
   ## Commit a transaction. This writes all changes made in the transaction to disk.
   t.txn.commit()
 
@@ -152,36 +152,36 @@ template reset*(t: Transaction) =
   ##     not `mdb_reset`- the latter does something else not covered by LimDB.
   t.txn.abort()
 
-proc `[]`*(db: Database, key: string): string =
+proc `[]`*(d: Database, key: string): string =
   ## Fetch a value in the database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   try:
     result = t[key]
   finally:
     t.reset()
 
-proc `[]=`*(d: Database, key, value: string) =
+proc `[]=`*(d: var Database, key, value: string) =
   ## Set a value in the database
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = d.initTransaction
+  var t = d.initTransaction
   try:
     t[key] = value
   except:
-    t.reset()
+    t.reset
     raise
   t.commit()
 
-proc del*(db: Database, key, value: string) =
+proc del*(d: var Database, key, value: string) =
   ## Delete a key-value pair in the database
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = db.initTransaction
+  var t = d.initTransaction
   try:
     t.del(key, value)
   except:
@@ -189,7 +189,7 @@ proc del*(db: Database, key, value: string) =
     raise
   t.commit()
 
-proc del*(db: Database, key: string) =
+proc del*(d: var Database, key: string) =
   ## Deletes a value in the database
   ##
   ## .. note::
@@ -198,7 +198,7 @@ proc del*(db: Database, key: string) =
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
-  let t = db.initTransaction
+  var t = d.initTransaction
   try:
     t.del(key)
   except:
@@ -206,15 +206,15 @@ proc del*(db: Database, key: string) =
     raise
   t.commit()
 
-proc hasKey*(db: Database, key: string):bool =
+proc hasKey*(d: Database, key: string):bool =
   ## See if a key exists without fetching any data in a transaction
-  let t = db.initTransaction
+  let t = d.initTransaction
   result = t.hasKey(key)
   t.reset()
 
-template contains*(db: Database, key:string):bool =
+template contains*(d: Database, key:string):bool =
   ## Alias for hasKey to support `in` syntax in transactions
-  hasKey(db, key)
+  hasKey(d, key)
 
 iterator keys*(t: Transaction): string =
   ## Iterate over all keys in a database with a transaction
@@ -256,7 +256,7 @@ iterator values*(t: Transaction): string =
   finally:
     cursor.cursorClose
 
-iterator mvalues*(t: Transaction): var string =
+iterator mvalues*(t: var Transaction): var string =
   ## Iterate over all values in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -309,7 +309,7 @@ iterator pairs*(t: Transaction): (string, string) =
   finally:
     cursor.cursorClose
 
-iterator mpairs*(t: Transaction): (string, var string) =
+iterator mpairs*(t: var Transaction): (string, var string) =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -346,85 +346,85 @@ template len*(t: Transaction): int =
   ## Returns the number of key-value pairs in the database.
   stat(t.txn, t.dbi).msEntries.int
 
-iterator keys*(db: Database): string =
+iterator keys*(d: Database): string =
   ## Iterate over all keys pairs in a database.
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   try:
     for key in t.keys:
       yield key
   finally:
     t.reset()
 
-iterator values*(db: Database): string =
+iterator values*(d: Database): string =
   ## Iterate over all values in a database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   try:
     for value in t.values:
       yield value
   finally:
     t.reset()
 
-iterator pairs*(db: Database): (string, string) =
+iterator pairs*(d: Database): (string, string) =
   ## Iterate over all values in a database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   try:
     for pair in t.pairs:
       yield pair
   finally:
     t.reset()
 
-iterator mvalues*(db: Database): var string =
+iterator mvalues*(d: var Database): var string =
   ## Iterate over all values in a database allowing modification
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  var t = d.initTransaction
   try:
     for value in t.mvalues:
       yield value
   finally:
     t.commit()
 
-iterator mpairs*(db: Database): (string, var string) =
+iterator mpairs*(d: var Database): (string, var string) =
   ## Iterate over all key-value pairs in a database allowing the values
   ## to be modified
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  var t = d.initTransaction
   try:
     for k, v in t.mpairs:
       yield (k, v)
   finally:
     t.commit()
 
-proc len*(db: Database): int =
+proc len*(d: Database): int =
   ## Returns the number of key-value pairs in the database.
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   result = t.len
   t.reset()
 
-proc copy*(db: Database, filename: string) =
+proc copy*(d: Database, filename: string) =
   ## Copy a database to a different directory. This also performs routine database
   ## maintenance so the resulting file with usually be smaller. This is best performed
   ## when no one is writing to the database directory.
-  let err = envCopy(db.env, filename.cstring)
+  let err = envCopy(d.env, filename.cstring)
   if err != 0:
     raise newException(Exception, $strerror(err))
 
-template clear*(t: Transaction) =
+template clear*(t: var Transaction) =
   ## Remove all key-values pairs from the database, emptying it.
   ##
   ## .. note::
@@ -432,22 +432,22 @@ template clear*(t: Transaction) =
   ##     more data than was in there before is added. It will shrink if it is copied.
   emptyDb(t.txn, t.dbi)
 
-proc clear*(db: Database) =
+proc clear*(d: var Database) =
   ## Remove all key-values pairs from the database, emptying it.
   ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
-  let t = db.initTransaction
+  var t = d.initTransaction
   t.clear
   t.commit
 
-template close*(db: Database) =
+template close*(d: Database) =
   ## Close the database directory. This will free up some memory and make all databases
   ## that were created from the same directory unavailable. This is not necessary for many use cases.
   ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
-  envClose(db.env)
+  envClose(d.env)
 
 proc getOrDefault*(t: Transaction, key: string):string =
   ## Read a value from a key in a transaction and return the provided default value if
@@ -467,3 +467,91 @@ proc getOrDefault*(d: Database, key: string):string =
   finally:
     t.reset()
 
+proc hasKeyOrPut*(t: var Transaction, key, val: string): bool =
+  ## Returns true if `key` is in the transaction view of the database, otherwise inserts `value`.
+  result = key in t
+  if not result:
+    t[key] = val
+
+proc hasKeyOrPut*(d: var Database, key, val: string): bool =
+  ## Returns true if `key` is in the Database, otherwise inserts `value`.
+  var t = d.initTransaction
+  try:
+    result = key in t
+    if result:
+      t.reset
+    else:
+      t[key] = val
+      t.commit
+  except:
+    t.reset
+    raise
+
+#[
+
+These don't work yet, see https://forum.nim-lang.org/t/10048 
+
+proc mgetOrPut(t: var Transaction, key, val: string): var string =
+  ## Retrieves value at key as mutable copy or enters val if not present
+  try:
+    result = t[key]
+  except KeyError:
+    result = t[key] = val
+
+proc mgetOrPut(d: var Database, key, val: string): var string =
+  ## Retrieves value of key as mutable copy or enters val if not present
+  var t = d.initTransaction
+  try:
+    result = t[key]
+    t.reset()
+  except KeyError:
+    result = t[key] = val
+    t.commit()
+]#
+
+proc pop(t: var Transaction, key: string, val: var string): bool =
+  ## Delete value in database within transaction. If it existed, return
+  ## true and place into `val`
+  try:
+    val = t[key]
+    t.del(key)
+    t.commit
+    true
+  except KeyError:
+    t.reset
+    false
+
+proc pop(d: var Database, key: string, val: var string): bool =
+  ## Delete value in database. If it existed, return
+  ## true and place value into `val`
+  var t = d.initTransaction
+  try:
+    val = t[key]
+    t.del(key)
+    t.commit
+    true
+  except:
+    t.reset
+    false
+
+proc take(t: var Transaction, key: string, val: var string): bool =
+  ## Alias for pop
+  pop(t, key, val)
+
+proc take(d: var Database, key: string, val: var string): bool =
+  ## Alias for pop
+  pop(d, key, val)
+
+
+# TODO: implement, or mark reason for non-implementation: 
+
+# procs from std/tables not implemented:
+# smallest, largest, withValue      would need to be done low level in C code for efficiency
+#                                   to make sense, not important enough for that
+# inc, dec                          want to support native ints and floats first, incing strings irks me
+# indexBy                           seems a bit specialized, you can do it on a normal table and merge if needed
+# toLimDB                           cool way to init but db needs path or existing db to init, create normal table
+#                                   with toTable and merge if needed
+# merge                             specialized, only for counttable.
+# mgetOrPut                         need more information on memory management involved
+# withValue                  
