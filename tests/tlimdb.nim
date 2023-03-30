@@ -142,14 +142,14 @@ block:
 
 block:
   let db3 = db.initDatabase("db3")
-  assert db3.getOrDefault("foo", "bar") == "bar", "key does not exist, use default"
-  db3["foo"] = "fuz"
-  assert db3.getOrDefault("foo", "bar") == "fuz", "key there, use value"
+  assert db3.getOrDefault("foo") == "", "key does not exist, use default"
+  db3["foo"] = "bar"
+  assert db3.getOrDefault("foo") == "bar", "key there, use value"
   db3.del("foo")
 
   let t = db3.initTransaction()
-  assert t.getOrDefault("foo", "bar") == "bar", "key does not exist, use default, in transaction"
-  t["foo"] = "fuz"
-  assert t.getOrDefault("foo", "bar") == "fuz", "key there, use value, in transaction"
+  assert t.getOrDefault("foo") == "", "key does not exist, use default, in transaction"
+  t["foo"] = "bar"
+  assert t.getOrDefault("foo") == "bar", "key there, use value, in transaction"
   t.reset()
 
