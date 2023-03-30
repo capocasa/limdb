@@ -1,0 +1,8 @@
+
+0.2.0      Breaking change: Bring mutable/unmutable parameters
+           in line with stdlib conventions
+
+           add more procs like in std/tables
+
+0.1.0      Initial release
+
