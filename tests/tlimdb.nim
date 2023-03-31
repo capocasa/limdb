@@ -153,3 +153,68 @@ block:
   assert t.getOrDefault("foo") == "bar", "key there, use value, in transaction"
   t.reset()
 
+block:
+  let db4 = db.initDatabase("db4")
+  assert db4.hasKeyOrPut("foo", "bar") == false, "returns false if key not in database"
+  assert db4["foo"] == "bar", "value was set"
+  assert db4.hasKeyOrPut("foo", "fuz"), "returns true if key in database"
+  assert db4["foo"] == "bar", "value was not set, still previous value"
+  db4.del("foo")
+
+  let t = db4.initTransaction
+  assert t.hasKeyOrPut("foo", "bar") == false, "returns false if key does not exist in transaction"
+  assert t["foo"] == "bar", "value was set"
+  assert t.hasKeyOrPut("foo", "fuz"), "returns true if key in database"
+  assert t["foo"] == "bar", "value was not set, still previous value"
+  t.reset
+
+block:
+  let db5 = db.initDatabase("db5")
+  let s = db5.getOrPut("foo", "bar")
+  assert s == "bar", "value was returned"
+  assert db5["foo"] == "bar", "value was put"
+  let s2 = db5.getOrPut("foo", "fuz")
+  assert s2 == "bar", "value in database is returned"
+  db5.del("foo")
+
+  let t = db5.initTransaction
+  let s3 = t.getOrPut("foo", "bar")
+  assert s3 == "bar", "value was returned"
+  assert t["foo"] == "bar", "value was put"
+  let s4 = t.getOrPut("foo", "fuz")
+  assert s4 == "bar", "value in database is returned"
+  t.reset
+
+block:
+  let db6 = db.initDatabase("db6")
+  var val: string
+  assert not db6.pop("foo", val), "not there"
+  assert not db6.take("foo", val), "not there"
+  assert val == "", "no changes"
+  db6["foo"] = "bar"
+  assert db6.pop("foo", val), "there"
+  assert val == "bar", "assigned"
+  assert not db6.hasKey("foo"), "no longer there"
+  db6["foo"] = "bar"
+  val = ""
+  assert db6.take("foo", val), "there"
+  assert val == "bar", "assigned"
+  assert not db6.hasKey("foo"), "no longer there"
+
+  let t = db6.initTransaction
+  val = ""
+  assert not t.pop("foo", val), "not there"
+  assert not t.take("foo", val), "not there"
+  assert val == "", "no changes"
+  t["foo"] = "bar"
+  assert t.pop("foo", val), "there"
+  assert val == "bar", "assigned"
+  assert not t.hasKey("foo"), "no longer there"
+  t["foo"] = "bar"
+  val = ""
+  assert t.take("foo", val), "there"
+  assert val == "bar", "assigned"
+  assert not t.hasKey("foo"), "no longer there"
+  t.reset
+
+
