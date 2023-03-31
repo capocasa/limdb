@@ -164,10 +164,17 @@ window.addEventListener('DOMContentLoaded', main);
 
   </ul>
   <ul class="simple nested-toc-section">getOrDefault
-      <li><a class="reference" href="#getOrDefault%2CDatabase%2Cstring%2Cstring"
-    title="getOrDefault(d: Database; key, default: string): string">getOrDefault(d: Database; key, default: string): string</a></li>
-  <li><a class="reference" href="#getOrDefault%2CTransaction%2Cstring%2Cstring"
-    title="getOrDefault(t: Transaction; key, default: string): string">getOrDefault(t: Transaction; key, default: string): string</a></li>
+      <li><a class="reference" href="#getOrDefault%2CDatabase%2Cstring"
+    title="getOrDefault(d: Database; key: string): string">getOrDefault(d: Database; key: string): string</a></li>
+  <li><a class="reference" href="#getOrDefault%2CTransaction%2Cstring"
+    title="getOrDefault(t: Transaction; key: string): string">getOrDefault(t: Transaction; key: string): string</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">getOrPut
+      <li><a class="reference" href="#getOrPut%2CDatabase%2Cstring%2Cstring"
+    title="getOrPut(d: Database; key, val: string): string">getOrPut(d: Database; key, val: string): string</a></li>
+  <li><a class="reference" href="#getOrPut%2CTransaction%2Cstring%2Cstring"
+    title="getOrPut(t: Transaction; key, val: string): string">getOrPut(t: Transaction; key, val: string): string</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">hasKey
@@ -177,11 +184,18 @@ window.addEventListener('DOMContentLoaded', main);
     title="hasKey(t: Transaction; key: string): bool">hasKey(t: Transaction; key: string): bool</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">hasKeyOrPut
+      <li><a class="reference" href="#hasKeyOrPut%2CDatabase%2Cstring%2Cstring"
+    title="hasKeyOrPut(d: Database; key, val: string): bool">hasKeyOrPut(d: Database; key, val: string): bool</a></li>
+  <li><a class="reference" href="#hasKeyOrPut%2CTransaction%2Cstring%2Cstring"
+    title="hasKeyOrPut(t: Transaction; key, val: string): bool">hasKeyOrPut(t: Transaction; key, val: string): bool</a></li>
+
+  </ul>
   <ul class="simple nested-toc-section">initDatabase
       <li><a class="reference" href="#initDatabase%2CDatabase%2Cstring"
     title="initDatabase(db: Database; name = &quot;&quot;): Database">initDatabase(db: Database; name = &quot;&quot;): Database</a></li>
-  <li><a class="reference" href="#initDatabase%2Cstring%2Cstring%2Cint"
-    title="initDatabase(filename = &quot;&quot;; name = &quot;&quot;; maxdbs = 255): Database">initDatabase(filename = &quot;&quot;; name = &quot;&quot;; maxdbs = 255): Database</a></li>
+  <li><a class="reference" href="#initDatabase%2Cstring%2Cstring%2Cint%2Cint"
+    title="initDatabase(filename = &quot;&quot;; name = &quot;&quot;; maxdbs = 255; size = 10485760): Database">initDatabase(filename = &quot;&quot;; name = &quot;&quot;; maxdbs = 255; size = 10485760): Database</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">initTransaction
@@ -197,6 +211,20 @@ window.addEventListener('DOMContentLoaded', main);
   <ul class="simple nested-toc-section">open
       <li><a class="reference" href="#open%2CDatabase%2Cstring"
     title="open(db: Database; name: string): Dbi">open(db: Database; name: string): Dbi</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">pop
+      <li><a class="reference" href="#pop%2CDatabase%2Cstring%2Cstring"
+    title="pop(d: Database; key: string; val: var string): bool">pop(d: Database; key: string; val: var string): bool</a></li>
+  <li><a class="reference" href="#pop%2CTransaction%2Cstring%2Cstring"
+    title="pop(t: Transaction; key: string; val: var string): bool">pop(t: Transaction; key: string; val: var string): bool</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">take
+      <li><a class="reference" href="#take%2CDatabase%2Cstring%2Cstring"
+    title="take(d: Database; key: string; val: var string): bool">take(d: Database; key: string; val: var string): bool</a></li>
+  <li><a class="reference" href="#take%2CTransaction%2Cstring%2Cstring"
+    title="take(t: Transaction; key: string; val: var string): bool">take(t: Transaction; key: string; val: var string): bool</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">toBlob
@@ -545,8 +573,8 @@ If you want other data types than a string, implement this for the data type</di
 
 </dd>
 </div>
-<div id="getOrDefault,Database,string,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#getOrDefault%2CDatabase%2Cstring%2Cstring"><span class="Identifier">getOrDefault</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.
+<div id="getOrDefault,Database,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#getOrDefault%2CDatabase%2Cstring"><span class="Identifier">getOrDefault</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -554,12 +582,30 @@ Fetch a value in the database and return the provided default value if it does n
 
 </dd>
 </div>
-<div id="getOrDefault,Transaction,string,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#getOrDefault%2CTransaction%2Cstring%2Cstring"><span class="Identifier">getOrDefault</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.
-    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<div id="getOrDefault,Transaction,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#getOrDefault%2CTransaction%2Cstring"><span class="Identifier">getOrDefault</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 Read a value from a key in a transaction and return the provided default value if it does not exist
+
+</dd>
+</div>
+<div id="getOrPut,Database,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#getOrPut%2CDatabase%2Cstring%2Cstring"><span class="Identifier">getOrPut</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Retrieves value of key as mutable copy or enters and returns val if not present
+
+</dd>
+</div>
+<div id="getOrPut,Transaction,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#getOrPut%2CTransaction%2Cstring%2Cstring"><span class="Identifier">getOrPut</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Retrieves value at key as mutable copy or enters and returns val if not present
 
 </dd>
 </div>
@@ -579,6 +625,24 @@ See if a key exists without fetching any data
 
 </dd>
 </div>
+<div id="hasKeyOrPut,Database,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#hasKeyOrPut%2CDatabase%2Cstring%2Cstring"><span class="Identifier">hasKeyOrPut</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Returns true if <tt class="docutils literal"><span class="pre"><span class="Identifier">key</span></span></tt> is in the Database, otherwise inserts <tt class="docutils literal"><span class="pre"><span class="Identifier">value</span></span></tt>.
+
+</dd>
+</div>
+<div id="hasKeyOrPut,Transaction,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#hasKeyOrPut%2CTransaction%2Cstring%2Cstring"><span class="Identifier">hasKeyOrPut</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">,</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Returns true if <tt class="docutils literal"><span class="pre"><span class="Identifier">key</span></span></tt> is in the transaction view of the database, otherwise inserts <tt class="docutils literal"><span class="pre"><span class="Identifier">value</span></span></tt>.
+
+</dd>
+</div>
 <div id="initDatabase,Database,string">
 <dt><pre><span class="Keyword">proc</span> <a href="#initDatabase%2CDatabase%2Cstring"><span class="Identifier">initDatabase</span></a><span class="Other">(</span><span class="Identifier">db</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">name</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">)</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span>
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
@@ -588,8 +652,8 @@ Open another database of a different name in an already-connected on-disk storag
 
 </dd>
 </div>
-<div id="initDatabase,string,string,int">
-<dt><pre><span class="Keyword">proc</span> <a href="#initDatabase%2Cstring%2Cstring%2Cint"><span class="Identifier">initDatabase</span></a><span class="Other">(</span><span class="Identifier">filename</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span> <span class="Identifier">name</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span> <span class="Identifier">maxdbs</span> <span class="Other">=</span> <span class="DecNumber">255</span><span class="Other">)</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a> {.
+<div id="initDatabase,string,string,int,int">
+<dt><pre><span class="Keyword">proc</span> <a href="#initDatabase%2Cstring%2Cstring%2Cint%2Cint"><span class="Identifier">initDatabase</span></a><span class="Other">(</span><span class="Identifier">filename</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span> <span class="Identifier">name</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span> <span class="Identifier">maxdbs</span> <span class="Other">=</span> <span class="DecNumber">255</span><span class="Other">;</span> <span class="Identifier">size</span> <span class="Other">=</span> <span class="DecNumber">10485760</span><span class="Other">)</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">WriteDirEffect</span><span class="Other">,</span> <span class="Identifier">ReadDirEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -625,6 +689,42 @@ This inits and resets a transaction under the hood</div>
 <dd>
 
 
+
+</dd>
+</div>
+<div id="pop,Database,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#pop%2CDatabase%2Cstring%2Cstring"><span class="Identifier">pop</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Keyword">var</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Delete value in database. If it existed, return true and place value into <tt class="docutils literal"><span class="pre"><span class="Identifier">val</span></span></tt>
+
+</dd>
+</div>
+<div id="pop,Transaction,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#pop%2CTransaction%2Cstring%2Cstring"><span class="Identifier">pop</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Keyword">var</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Delete value in database within transaction. If it existed, return true and place into <tt class="docutils literal"><span class="pre"><span class="Identifier">val</span></span></tt>
+
+</dd>
+</div>
+<div id="take,Database,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#take%2CDatabase%2Cstring%2Cstring"><span class="Identifier">take</span></a><span class="Other">(</span><span class="Identifier">d</span><span class="Other">:</span> <a href="limdb.html#Database"><span class="Identifier">Database</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Keyword">var</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Alias for pop
+
+</dd>
+</div>
+<div id="take,Transaction,string,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#take%2CTransaction%2Cstring%2Cstring"><span class="Identifier">take</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="limdb.html#Transaction"><span class="Identifier">Transaction</span></a><span class="Other">;</span> <span class="Identifier">key</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Keyword">var</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+Alias for pop
 
 </dd>
 </div>
@@ -827,7 +927,7 @@ This is called <tt class="docutils literal"><span class="pre"><span class="Ident
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2023-03-30 10:28:43 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2023-03-31 21:52:52 UTC</small>
       </div>
     </div>
   </div>
