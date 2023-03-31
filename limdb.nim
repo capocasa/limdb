@@ -17,6 +17,7 @@ type
     ## A key-value database in a memory-mapped on-disk storage location.
     env*: LMDBEnv
     dbi*: Dbi
+    dummyTransaction*: Transaction # this is just to convince the compiler to return mutable strings and isn't used further
 
   Transaction* = object
     ## A transaction may be created and reads or writes performed on it instead of directly
@@ -24,6 +25,7 @@ type
     ## at the same time, and changes happen all at once at the end or not at all.
     txn*: LMDBTxn
     dbi*: Dbi
+    dummyResult*: string  # as above
 
   Blob* = Val
     ## A variable-length collection of bytes that can be used as either a key or value. This
@@ -65,6 +67,10 @@ proc initTransaction*(d: Database): Transaction =
   result.dbi = d.dbi
   result.txn = d.env.newTxn()
 
+proc initTransaction(d: var Database): var Transaction =
+  d.dummyTransaction = Transaction(dbi: d.dbi, txn: d.env.newTxn()))
+  d.dummyTransaction
+
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
   ##
@@ -74,7 +80,7 @@ proc toBlob*(s: string): Blob =
   result.mvData = s.cstring
 
 proc fromBlob*(b: Blob): string =
-  ## Convert a chunk of data, key or value, to a string
+  ## Convert a chunk of data, key or value, to a var string
   ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
@@ -89,6 +95,18 @@ proc `[]`*(t: Transaction, key: string): string =
   let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
   if err == 0:
     result = d.fromBlob
+  elif err == lmdb.NOTFOUND:
+    raise newException(KeyError, $strerror(err))
+  else:
+    raise newException(Exception, $strerror(err))
+
+proc `[]`*(t: var Transaction, key: string): var string =
+  # Read a value from a key in a transaction
+  var k = key.toBlob
+  var d: Blob
+  let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
+  if err == 0:
+    result = t.dummyResult = d.fromBlob
   elif err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   else:
@@ -140,7 +158,11 @@ template contains*(t: Transaction, key: string): bool =
 
 template commit*(t: var Transaction) =
   ## Commit a transaction. This writes all changes made in the transaction to disk.
-  t.txn.commit()
+  t.txn.commit
+  for i, a in t.db.t:
+    if a.txn == t.txn:
+      a.del(i)
+      break
 
 template reset*(t: Transaction) =
   ## Reset a transaction. This throws away all changes made in the transaction.
@@ -150,7 +172,14 @@ template reset*(t: Transaction) =
   ##     This is called `reset` because that is a pleasant and familiar term for reverting
   ##     changes. The term differs from LMDB though, under the hood this calles `mdb_abort`,
   ##     not `mdb_reset`- the latter does something else not covered by LimDB.
-  t.txn.abort()
+  t.txn.abort
+
+template reset*(t: var Transaction) =
+  t.txn.abort
+  for i, a in t.db.t:
+    if a.txn == t.txn:
+      a.del(i)
+      break
 
 proc `[]`*(d: Database, key: string): string =
   ## Fetch a value in the database
@@ -159,9 +188,20 @@ proc `[]`*(d: Database, key: string): string =
   ##     This inits and resets a transaction under the hood
   let t = d.initTransaction
   try:
-    result = t[key]
+    t[key]
   finally:
-    t.reset()
+    t.reset
+
+proc `[]`*(d: var Database, key: string): var string =
+  ## Fetch a value in the database
+  ##
+  ## .. note::
+  ##     This inits and resets a transaction under the hood
+  d.dummyTransaction = d.initTransaction
+  try:
+    result = d.dummyTransaction.dummyResult = d.dummyTransaction[key]
+  finally:
+    d.dummyTransaction.reset
 
 proc `[]=`*(d: var Database, key, value: string) =
   ## Set a value in the database
@@ -487,27 +527,26 @@ proc hasKeyOrPut*(d: var Database, key, val: string): bool =
     t.reset
     raise
 
-#[
-
-These don't work yet, see https://forum.nim-lang.org/t/10048 
-
 proc mgetOrPut(t: var Transaction, key, val: string): var string =
-  ## Retrieves value at key as mutable copy or enters val if not present
+  ## Retrieves value at key as mutable copy or enters and returns val if not present
   try:
-    result = t[key]
+    t.dummyResult = t[key]
+    result = t.dummyResult
   except KeyError:
-    result = t[key] = val
+    t[key] = val
 
 proc mgetOrPut(d: var Database, key, val: string): var string =
-  ## Retrieves value of key as mutable copy or enters val if not present
-  var t = d.initTransaction
+  ## Retrieves value of key as mutable copy or enters and returns val if not present
+  d.dummyTransaction = d.initTransaction
   try:
-    result = t[key]
+    d.dummyTransaction.dummyResult = d.dummyTransaction[key]
+    result = d.dummyTransaction.dummyResult
     t.reset()
   except KeyError:
-    result = t[key] = val
-    t.commit()
-]#
+    d.dummyTransaction[key] = val
+    d.dummyTransaction.dummyResult = val
+    d.dummyTransaction.commit()
+    result = d.dummyTransaction.dummyResult
 
 proc pop(t: var Transaction, key: string, val: var string): bool =
   ## Delete value in database within transaction. If it existed, return
