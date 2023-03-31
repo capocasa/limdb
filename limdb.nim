@@ -467,3 +467,86 @@ proc getOrDefault*(d: Database, key: string):string =
   finally:
     t.reset()
 
+proc hasKeyOrPut*(t: Transaction, key, val: string): bool =
+  ## Returns true if `key` is in the transaction view of the database, otherwise inserts `value`.
+  result = key in t
+  if not result:
+    t[key] = val
+
+proc hasKeyOrPut*(d: Database, key, val: string): bool =
+  ## Returns true if `key` is in the Database, otherwise inserts `value`.
+  let t = d.initTransaction
+  try:
+    result = key in t
+    if result:
+      t.reset
+    else:
+      t[key] = val
+      t.commit
+  except:
+    t.reset
+    raise
+
+proc getOrPut*(t: Transaction, key, val: string): string =
+  ## Retrieves value at key as mutable copy or enters and returns val if not present
+  try:
+    result = t[key]
+  except KeyError:
+    result = val
+    t[key] = val
+
+proc getOrPut*(d: Database, key, val: string): string =
+  ## Retrieves value of key as mutable copy or enters and returns val if not present
+  let t = d.initTransaction
+  try:
+    result = t[key]
+    t.reset()
+  except KeyError:
+    result = val
+    t[key] = val
+    t.commit()
+
+proc pop*(t: Transaction, key: string, val: var string): bool =
+  ## Delete value in database within transaction. If it existed, return
+  ## true and place into `val`
+  try:
+    val = t[key]
+    t.del(key)
+    true
+  except KeyError:
+    false
+
+proc pop*(d: Database, key: string, val: var string): bool =
+  ## Delete value in database. If it existed, return
+  ## true and place value into `val`
+  let t = d.initTransaction
+  try:
+    val = t[key]
+    t.del(key)
+    t.commit
+    true
+  except:
+    t.reset
+    false
+
+proc take*(t: Transaction, key: string, val: var string): bool =
+  ## Alias for pop
+  pop(t, key, val)
+
+proc take*(d: Database, key: string, val: var string): bool =
+  ## Alias for pop
+  pop(d, key, val)
+
+
+# keeping a note of our thinking in not implementing some procs from tables
+#
+# smallest, largest    would need to be done low level in C code for efficiency
+#                      to make sense, not important enough for that
+# inc, dec             want to support native ints and floats first, incing strings irks me
+# indexBy              seems a bit specialized, you can always use a loop
+# toLimDB              cool way to init but db needs path or existing db to init, create normal table
+#                      with toTable and add values instead
+# merge                specialized, only for counttable.
+# mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
+# withValue            Also returns mutable value, unsure how useful it is
+
