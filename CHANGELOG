@@ -1,0 +1,5 @@
+
+0.2.0      Add procs from tables: getOrDefault, hasKeyOrPut, pop and take
+           Add getOrPut
+
+0.1.0      Initial release,
