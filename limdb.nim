@@ -30,6 +30,14 @@ type
     ## is LMDB's native storage type- a block of memory. `string` types are converted automatically,
     ## and conversion for other data types can be added by adding `fromBlob` and `toBlob` for a type.
 
+  Writes* = object
+    ## A tag to track write transactions
+  Concludes* = object
+    ## A tag to track commits and rollbacks
+
+  TransactionType* = enum
+    readonly, writable
+
 proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
   let dummy = d.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
@@ -73,7 +81,7 @@ proc toBlob*(s: string): Blob =
   result.mvSize = s.len.uint
   result.mvData = s.cstring
 
-proc fromBlob*(b: Blob, T: typedesc[int]): int =
+proc fromBlob*(b: Blob, T: typedesc[SomeNumber]): SomeNumber =
   ## Convert a chunk of data, key or value, to a string
   ##
   ## .. note::
@@ -110,8 +118,8 @@ proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   else:
     raise newException(Exception, $strerror(err))
 
-proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) =
-  # Write a value to a key in a transaction
+proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
+  # Writes a value to a key in a transaction
   var k = key.toBlob
   var v = val.toBlob
   let err = lmdb.put(t.txn, t.dbi, addr(k), addr(v), 0)
@@ -122,7 +130,7 @@ proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) =
   else:
     raise newException(Exception, $strerror(err))
 
-proc del*[A, B](t: Transaction[A, B], key: A, val: B) =
+proc del*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   ## Delete a key-value pair
   # weird lmdb quirk, you delete with both key and value because you can "shadow"
   # a key's value with another put
@@ -150,15 +158,15 @@ proc hasKey*[A, B](t: Transaction[A, B], key: A): bool =
   var dummyData:Blob
   return 0 == get(t.txn, t.dbi, addr(key), addr(dummyData))
 
-template contains*[A, B](t: Transaction[A, B], key: A): bool =
+proc contains*[A, B](t: Transaction[A, B], key: A): bool =
   ## Alias for hasKey to support `in` syntax
   hasKey(t, key)
 
-template commit*[A, B](t: Transaction[A, B]) =
+proc commit*[A, B](t: Transaction[A, B]) {.tags: [Concludes].} =
   ## Commit a transaction. This writes all changes made in the transaction to disk.
   t.txn.commit()
 
-template reset*[A, B](t: Transaction[A, B]) =
+proc reset*[A, B](t: Transaction[A, B]) {.tags: [Concludes].} =
   ## Reset a transaction. This throws away all changes made in the transaction.
   ## After only reading in a transaction, reset it as well.
   ##
@@ -272,7 +280,7 @@ iterator values*[A, B](t: Transaction[A, B]): B =
   finally:
     cursor.cursorClose
 
-iterator mvalues*[A, B](t: Transaction[A, B]): var B =
+iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
   ## Iterate over all values in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -325,7 +333,7 @@ iterator pairs*[A, B](t: Transaction[A, B]): (A, B) =
   finally:
     cursor.cursorClose
 
-iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) =
+iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -531,6 +539,9 @@ proc pop*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
     true
   except KeyError:
     false
+  except:
+    t.reset
+    raise
 
 proc pop*[A, B](d: Database[A, B], key: A, val: var B): bool =
   ## Delete value in database. If it existed, return
@@ -541,9 +552,12 @@ proc pop*[A, B](d: Database[A, B], key: A, val: var B): bool =
     t.del(key)
     t.commit
     true
-  except:
+  except KeyError:
     t.reset
     false
+  except:
+    t.reset
+    raise
 
 proc take*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
   ## Alias for pop
@@ -565,4 +579,30 @@ proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
 # merge                specialized, only for counttable.
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
+
+import std/[macros, effecttraits]
+
+macro callsTaggedAs(p:proc, tag: string):untyped =
+  for t in getTagsList(p):
+    if t.eqIdent(tag):
+      return newLit(true)
+  newLit(false)
+
+template withTransaction*(db: Database, body: untyped) =
+  block:
+    let t {.inject.} = db.initTransaction
+    try:
+      body
+      proc bodyproc() {.compileTime.} =
+        body
+      when not callsTaggedAs(bodyproc, "Concludes"):
+        when callsTaggedAs(bodyproc, "Writes"):
+          t.commit
+        else:
+          t.reset
+    except:
+      t.reset
+      raise
+
+
 

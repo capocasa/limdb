@@ -217,4 +217,35 @@ block:
   assert not t.hasKey("foo"), "no longer there"
   t.reset
 
+block:
+  let db7 = db.initDatabase("db7")
+  db7.withTransaction:
+    t["foo"] = "bar"
+    t["fuz"] = "buz"
+
+  assert db7["foo"] == "bar", "written through transaction"
+  assert db7["fuz"] == "buz", "written through transaction"
+
+  try:
+    db7.withTransaction:
+      t["buz"] = "buz"
+      raise newException(CatchableError, "catch me if you can")
+  except CatchableError:
+    discard
+
+  assert "buz" notin db7, "rollback on exception"
+
+  proc dontwriteme() {.tags: [].} =
+    db7.withTransaction:
+      assert t["foo"] == "bar", "read works and was executed in proc that doesn't accept Write tag"
+
+  dontwriteme()
+
+  # TODO: test this in a seperate call
+  #[
+    proc dontwriteme2() {.tags: [].} =
+      db7.withTransaction:
+        t.del "foo"
+    dontwriteme2() # assert compiler error
+  ]#
 
