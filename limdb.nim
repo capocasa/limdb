@@ -8,7 +8,7 @@
 # could do it on the client but it will just be such a pleasant surprise when
 # someone finds a half-finished comment already there when loading on another device
 
-import std/os, lmdb
+import std/[os, macros, effecttraits], lmdb
 
 export lmdb
 
@@ -35,8 +35,7 @@ type
   Concludes* = object
     ## A tag to track commits and rollbacks
 
-  TransactionType* = enum
-    readonly, writable
+  LimDefect* = object of Defect
 
 proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
@@ -580,26 +579,27 @@ proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
 
-import std/[macros, effecttraits]
-
 macro callsTaggedAs(p:proc, tag: string):untyped =
   for t in getTagsList(p):
     if t.eqIdent(tag):
       return newLit(true)
   newLit(false)
 
-template withTransaction*(db: Database, body: untyped) =
+template with*(db: Database, body: untyped) =
+  ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
   block:
     let t {.inject.} = db.initTransaction
     try:
       body
       proc bodyproc() {.compileTime.} =
         body
-      when not callsTaggedAs(bodyproc, "Concludes"):
-        when callsTaggedAs(bodyproc, "Writes"):
-          t.commit
-        else:
-          t.reset
+      static:
+        when callsTaggedAs(bodyproc, "Concludes"):
+          raise newException(LimDefect, "Transaction in a `with` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+      when callsTaggedAs(bodyproc, "Writes"):
+        t.commit
+      else:
+        t.reset
     except:
       t.reset
       raise

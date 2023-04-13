@@ -43,16 +43,33 @@ Now if you comment out the write, you can run the program again and read the val
 
 That's it. If you just need to quickly save some data, you can stop reading here and start programming.
 
-Transactions
-############
+Grouped read and write
+######################
 
 Sometimes you need to read or write to the database in several related ways that are best done as a group.
-This is a common database concept and most databases support them. Reads and writes grouped in this way are
-gauranteed not to be affected by other writes happening at the same time. Also, all writes are completed at once
-after the transaction, and if there is an error, no writes happen at all. This goes a long way towards not
+Reads and writes grouped in this way are not to be affected by other writes happening at the same time.
+
+All writes are completed at once, and if there is an error, no writes happen at all. This goes a long way towards not
 messing up your data.
 
-A transaction is started using `initTransaction`, and stopped with either `reset` or `commit`. Use `reset` if
+Use a `with` block to group your reads and writes. The block contains a special variable `t` that can be used
+just like a database object.
+
+.. code-block:: nim
+
+    import limdb
+    let db = initDatabase("myDirectory")
+    with db:
+      echo t["foo"]
+      t["fuz"] = "buz"
+
+Transactions
+============
+
+Grouped reads and writes use a process called database transactions. They are quite
+common and most databases support them. At the beginning of a grouped read and write, a transaction `t` is created. At the end of the block, it is reset if there are only read operations like `[]` in the block. If there is at least one write such as `[]=` or `del`, it is committed.
+
+If you would like to have more control, at the expense of having to be more careful, a transaction is started manually using `initTransaction`, and stopped with either `reset` or `commit`. Use `reset` if
 you only read data, or you want to throw away all writes. Use `commit` to actually perform all the writes.
 
 .. code-block:: nim

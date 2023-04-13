@@ -219,15 +219,19 @@ block:
 
 block:
   let db7 = db.initDatabase("db7")
-  db7.withTransaction:
+  with db7:
     t["foo"] = "bar"
     t["fuz"] = "buz"
 
   assert db7["foo"] == "bar", "written through transaction"
   assert db7["fuz"] == "buz", "written through transaction"
 
+  with db7:
+    assert t["foo"] == "bar", "read through transaction"
+    assert t["fuz"] == "buz", "read through transaction"
+
   try:
-    db7.withTransaction:
+    with db7:
       t["buz"] = "buz"
       raise newException(CatchableError, "catch me if you can")
   except CatchableError:
@@ -235,17 +239,4 @@ block:
 
   assert "buz" notin db7, "rollback on exception"
 
-  proc dontwriteme() {.tags: [].} =
-    db7.withTransaction:
-      assert t["foo"] == "bar", "read works and was executed in proc that doesn't accept Write tag"
-
-  dontwriteme()
-
-  # TODO: test this in a seperate call
-  #[
-    proc dontwriteme2() {.tags: [].} =
-      db7.withTransaction:
-        t.del "foo"
-    dontwriteme2() # assert compiler error
-  ]#
-
+  # TODO: Test for defect on manual reset/commit
