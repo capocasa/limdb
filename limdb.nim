@@ -8,7 +8,10 @@
 # could do it on the client but it will just be such a pleasant surprise when
 # someone finds a half-finished comment already there when loading on another device
 
-import std/[os, macros, effecttraits], lmdb
+import std/[os, macros], lmdb
+
+when NimMajor >= 1 and NimMinor >= 4:
+  import std/effecttraits
 
 export lmdb
 
@@ -579,30 +582,35 @@ proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
 
-macro callsTaggedAs(p:proc, tag: string):untyped =
-  for t in getTagsList(p):
-    if t.eqIdent(tag):
-      return newLit(true)
-  newLit(false)
+when NimMajor >= 1 and NimMinor >= 4:
 
-template with*(db: Database, body: untyped) =
-  ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
-  block:
-    let t {.inject.} = db.initTransaction
-    try:
-      body
-      proc bodyproc() {.compileTime.} =
+  macro callsTaggedAs(p:proc, tag: string):untyped =
+    for t in getTagsList(p):
+      if t.eqIdent(tag):
+        return newLit(true)
+    newLit(false)
+
+  template with*(db: Database, body: untyped) =
+    ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
+    ##
+    ## .. note::
+    ##     Available using Nim 1.4 and above
+    block:
+      let t {.inject.} = db.initTransaction
+      try:
         body
-      static:
-        when callsTaggedAs(bodyproc, "Concludes"):
-          raise newException(LimDefect, "Transaction in a `with` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
-      when callsTaggedAs(bodyproc, "Writes"):
-        t.commit
-      else:
+        proc bodyproc() {.compileTime.} =
+          body
+        static:
+          when callsTaggedAs(bodyproc, "Concludes"):
+            raise newException(LimDefect, "Transaction in a `with` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+        when callsTaggedAs(bodyproc, "Writes"):
+          t.commit
+        else:
+          t.reset
+      except:
         t.reset
-    except:
-      t.reset
-      raise
+        raise
 
 
 

@@ -217,26 +217,29 @@ block:
   assert not t.hasKey("foo"), "no longer there"
   t.reset
 
-block:
-  let db7 = db.initDatabase("db7")
-  with db7:
-    t["foo"] = "bar"
-    t["fuz"] = "buz"
-
-  assert db7["foo"] == "bar", "written through transaction"
-  assert db7["fuz"] == "buz", "written through transaction"
-
-  with db7:
-    assert t["foo"] == "bar", "read through transaction"
-    assert t["fuz"] == "buz", "read through transaction"
-
-  try:
+when NimMajor >= 1 and NimMinor >= 4:
+  block:
+    let db7 = db.initDatabase("db7")
     with db7:
-      t["buz"] = "buz"
-      raise newException(CatchableError, "catch me if you can")
-  except CatchableError:
-    discard
+      t["foo"] = "bar"
+      t["fuz"] = "buz"
 
-  assert "buz" notin db7, "rollback on exception"
+    assert db7["foo"] == "bar", "written through transaction"
+    assert db7["fuz"] == "buz", "written through transaction"
+
+    with db7:
+      assert t["foo"] == "bar", "read through transaction"
+      assert t["fuz"] == "buz", "read through transaction"
+
+    try:
+      with db7:
+        t["buz"] = "buz"
+        raise newException(CatchableError, "catch me if you can")
+    except CatchableError:
+      discard
+
+    assert "buz" notin db7, "rollback on exception"
+
+    # TODO: Test for defect on manual reset/commit
 
   # TODO: Test for defect on manual reset/commit
