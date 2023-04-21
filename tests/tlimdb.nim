@@ -242,4 +242,25 @@ when NimMajor >= 1 and NimMinor >= 4:
 
     # TODO: Test for defect on manual reset/commit
 
-  # TODO: Test for defect on manual reset/commit
+block:
+  let db8 = db.initDatabase("db8")
+  db8[123] = 456
+  db8[1.23] = 4.56
+  db8[123.uint] = 456.uint
+
+  assert db8[123] == 456
+  assert db8[1.23] == 4.56
+  assert db9[123.uint] == 456.uint
+
+
+block:
+  let db9 = db.initDatabase("db9")
+  db9[3] = "fuz"
+  db9[1] = "foo"
+  db9[4] = "buz"
+  db9[2] = "bar"
+
+  var a: seq[string]
+  for v in db9.values:
+    a.add(v)
+  assert a == @["foo", "bar", "fuz", "buz"], "order by key numerically regardless of insertion order"

@@ -46,7 +46,7 @@ proc open*[A, B](d: Database[A, B], name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760, A: typedesc=string, B: typedesc=string): Database[A, B] =
+proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760, A: typedesc = string, B: typedesc = string): Database[A, B] =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
@@ -58,6 +58,25 @@ proc initDatabase*[A, B](d: Database[A, B], name = ""): Database[A, B] =
   ## Open another database of a different name in an already-connected on-disk storage location.
   result.env = d.env
   result.dbi = result.open(name)
+
+proc compare(a, b: SomeNumber): int =
+  if a < b:
+    -1
+  elif a > b:
+    1
+  else:
+    0
+
+proc compare[N, T](a, b: array[N, T]): int =
+  for i in 0..<a.len:
+    let r = compare(a[i], b[i])
+    if r != 0:
+      return r
+  0
+
+proc wrapCompare(T: typedesc): auto =
+  proc (a, b: ptr Blob): cint {.cdecl.} =
+    compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
 proc initTransaction*[A, B](d: Database[A, B]): Transaction[A, B] =
   ## Start a transaction from a database.
@@ -74,6 +93,10 @@ proc initTransaction*[A, B](d: Database[A, B]): Transaction[A, B] =
   ##     This commonly happens when an exception is raised.
   result.dbi = d.dbi
   result.txn = d.env.newTxn()
+  when A isnot string:
+    if 0 != setCompare(result.txn, result.dbi, cast[ptr CmpFunc](wrapCompare(A))):
+      raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
+
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -83,21 +106,13 @@ proc toBlob*(s: string): Blob =
   result.mvSize = s.len.uint
   result.mvData = s.cstring
 
-proc fromBlob*(b: Blob, T: typedesc[SomeNumber]): SomeNumber =
-  ## Convert a chunk of data, key or value, to a string
-  ##
-  ## .. note::
-  ##     If you want other data types than a string, implement this for the data type
-  assert sizeof(result) == b.mvSize.int  # todo: turn off on 'release' or 'danger' mode
-  result = cast[ptr int](b.mvData)[]
-
-proc toBlob*(i: int): Blob =
+proc toBlob*(x: SomeNumber or array): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
   ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
-  result.mvSize = sizeof(i).uint
-  cast[ptr int](result.mvData)[] = i
+  result.mvSize = sizeof(x).uint
+  cast[ptr typeof(x)](result.mvData)[] = x
 
 proc fromBlob*(b: Blob, T: typedesc[string]): string =
   ## Convert a chunk of data, key or value, to a string
@@ -107,6 +122,13 @@ proc fromBlob*(b: Blob, T: typedesc[string]): string =
   result = newStringOfCap(b.mvSize)
   result.setLen(b.mvSize)
   copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
+
+proc fromBlob*(b: Blob, T: typedesc[SomeNumber or array]): T =
+  ## Convert a chunk of data, key or value, to a string
+  ##
+  ## .. note::
+  ##     If you want other data types than a string, implement this for the data type
+  result = cast[ptr T](b.mvData)[]
 
 proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   # Read a value from a key in a transaction
