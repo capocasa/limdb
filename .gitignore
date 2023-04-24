@@ -3,3 +3,5 @@ nimcache
 outputGotten.txt
 testlimdb
 testresults
+tests/tlimdb
+

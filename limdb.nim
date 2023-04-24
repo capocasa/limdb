@@ -46,17 +46,17 @@ proc open*[A, B](d: Database[A, B], name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760, A: typedesc = string, B: typedesc = string): Database[A, B] =
+proc initDatabase*(d: Database, name = "", keyType: typedesc = string, valueType: typedesc = string): Database[keyType, valueType] =
+  ## Open another database of a different name in an already-connected on-disk storage location.
+  result.env = d.env
+  result.dbi = result.open(name)
+
+proc initDatabase*(filename = "", name = "", maxdbs = 254, size = 10485760, keyType: typedesc = string, valueType: typedesc = string): Database[keyType, valueType] =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
   result.env = newLMDBEnv(filename, maxdbs)
   discard envSetMapsize(result.env, uint(size))
-  result.dbi = result.open(name)
-
-proc initDatabase*[A, B](d: Database[A, B], name = ""): Database[A, B] =
-  ## Open another database of a different name in an already-connected on-disk storage location.
-  result.env = d.env
   result.dbi = result.open(name)
 
 proc compare(a, b: SomeNumber): int =
@@ -70,6 +70,13 @@ proc compare(a, b: SomeNumber): int =
 proc compare[N, T](a, b: array[N, T]): int =
   for i in 0..<a.len:
     let r = compare(a[i], b[i])
+    if r != 0:
+      return r
+  0
+
+proc compare[T: object | tuple](a, b: T): int =
+  for u, v in fields(a, b):
+    let r = compare(u, v)
     if r != 0:
       return r
   0
@@ -106,13 +113,12 @@ proc toBlob*(s: string): Blob =
   result.mvSize = s.len.uint
   result.mvData = s.cstring
 
-proc toBlob*(x: SomeNumber or array): Blob =
+template toBlob*(x: SomeNumber | array | tuple | object): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
   ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
-  result.mvSize = sizeof(x).uint
-  cast[ptr typeof(x)](result.mvData)[] = x
+  Blob(mvSize: sizeof(x).uint, mvData: cast[pointer](x.unsafeAddr))
 
 proc fromBlob*(b: Blob, T: typedesc[string]): string =
   ## Convert a chunk of data, key or value, to a string
@@ -123,7 +129,7 @@ proc fromBlob*(b: Blob, T: typedesc[string]): string =
   result.setLen(b.mvSize)
   copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
 
-proc fromBlob*(b: Blob, T: typedesc[SomeNumber or array]): T =
+proc fromBlob*(b: Blob, T: typedesc[SomeNumber | array | tuple | object]): T =
   ## Convert a chunk of data, key or value, to a string
   ##
   ## .. note::
@@ -630,9 +636,8 @@ when NimMajor >= 1 and NimMinor >= 4:
           t.commit
         else:
           t.reset
-      except:
+      except CatchableError:
         t.reset
         raise
-
 
 

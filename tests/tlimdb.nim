@@ -243,18 +243,13 @@ when NimMajor >= 1 and NimMinor >= 4:
     # TODO: Test for defect on manual reset/commit
 
 block:
-  let db8 = db.initDatabase("db8")
+  let db8 = db.initDatabase("db8", int, int)
   db8[123] = 456
-  db8[1.23] = 4.56
-  db8[123.uint] = 456.uint
-
   assert db8[123] == 456
-  assert db8[1.23] == 4.56
-  assert db9[123.uint] == 456.uint
 
 
 block:
-  let db9 = db.initDatabase("db9")
+  let db9 = db.initDatabase("db9", int, string)
   db9[3] = "fuz"
   db9[1] = "foo"
   db9[4] = "buz"
@@ -264,3 +259,99 @@ block:
   for v in db9.values:
     a.add(v)
   assert a == @["foo", "bar", "fuz", "buz"], "order by key numerically regardless of insertion order"
+
+const p = "/tmp/db"
+
+block:
+  let db10 = db.initDatabase("db10", int, int)
+  with db10:
+    t[3] = 3
+    t[2] = 2
+    t[1] = 1
+    
+    assert t[1] == 1
+    assert t[2] == 2
+    assert t[3] == 3
+
+block:
+  let db11 = db.initDatabase("db11", float, int)
+
+  with db11:
+    t[3.1] = 3
+    t[2.1] = 2
+    t[1.1] = 1
+
+    assert t[1.1] == 1
+    assert t[2.1] == 2 
+    assert t[3.1] == 3
+
+block:
+  let db12 = db.initDatabase("db12")
+  with db12:
+    t["foo"] = "c"
+    t["bar"] = "b"
+    t["fuz"] = "a"
+ 
+  var r: seq[(string, string)]
+  for k, v in db12:
+    r.add((k, v))
+
+  assert r == {"bar": "b", "foo": "c", "fuz": "a"}
+
+block:
+  let db13 = db.initDatabase("db13", array[3, float], string)
+
+  with db13:
+    t[ [1.1, 2.2, 3.3] ] = "foo"
+    t[ [2.1, 2.2, 3.3] ] = "fuz"
+    t[ [1.1, 2.2, 3.4] ] = "bar"
+    
+
+    assert t[ [1.1, 2.2, 3.3] ] == "foo"
+    assert t[ [1.1, 2.2, 3.4] ] == "bar"
+    assert t[ [2.1, 2.2, 3.3] ] == "fuz"
+
+  var r: seq[(array[3, float], string)]
+  for k, v in db13:
+    r.add((k, v))
+  assert r == {[1.1, 2.2, 3.3] : "foo", [1.1, 2.2, 3.4]: "bar", [2.1, 2.2, 3.3]: "fuz"}
+
+type Foo = object
+  a: int
+  b: array[3, int]
+
+block:
+  let db14 = db.initDatabase("db14", Foo, float)
+
+  with db14:
+
+    t[ Foo( a: 1, b: [4,5,6] ) ] = 1.1
+
+  assert db14[ Foo( a: 1, b: [4,5,6]) ] == 1.1
+
+block:
+  let db15 = db.initDatabase("db15", int, Foo)
+
+  with db15:
+    t[ 0 ] = Foo( a: 1, b: [1,2,3] )
+    t[ 1 ] = Foo( a: 2, b: [4,5,6] )
+  
+  var r: seq[(int, Foo)]
+  for k, v in db15:
+    r.add((k, v))
+  
+  assert r == {0: Foo( a: 1, b: [1,2,3] ), 1: Foo( a: 2, b: [4,5,6] )}
+
+block:
+  let db16 = db.initDatabase("db16", (int, int), tuple[a: int, b: int])
+
+  db16[ (2, 4) ] = (a: 2, b: 4)
+  db16[ (6, 8) ] = (a: 6, b: 8)
+  
+  var r: seq[((int, int), tuple[a: int, b: int])]
+  with db16:
+    for k, v in t:
+      r.add((k, v))
+  
+  assert r == { (2, 4): (a: 2, b: 4), (6, 8): (a: 6, b: 8) }
+
