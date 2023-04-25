@@ -46,12 +46,12 @@ proc open*[A, B](d: Database[A, B], name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(d: Database, name = "", keyType: typedesc = string, valueType: typedesc = string): Database[keyType, valueType] =
+proc initDatabase*[A, B](d: Database, name = "",): Database[A, B] =
   ## Open another database of a different name in an already-connected on-disk storage location.
   result.env = d.env
   result.dbi = result.open(name)
 
-proc initDatabase*(filename = "", name = "", maxdbs = 254, size = 10485760, keyType: typedesc = string, valueType: typedesc = string): Database[keyType, valueType] =
+proc initDatabase*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
