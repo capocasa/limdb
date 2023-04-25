@@ -10,7 +10,7 @@ import limdb
 
 let testLocation = getTempDir() / "tlimdb"
 removeDir(testLocation)
-let db = initDatabase(testLocation)
+let db = initDatabase[string, string](testLocation)
 
 db["foo"] = "bar"
 assert db["foo"] == "bar", "write and read back"
@@ -51,7 +51,7 @@ block:
   assert len(t) == 0, "length with transaction"
   t.reset()
 
-let db2 = db.initDatabase("db2")
+let db2 = db.initDatabase[:string, string]("db2")
 doAssertRaises(Exception): discard db2["foo"]
 
 db2["foo"] = "bar"
@@ -141,7 +141,7 @@ block:
   assert len(db2) == 4, "count length"
 
 block:
-  let db3 = db.initDatabase("db3")
+  let db3 = db.initDatabase[:string, string]("db3")
   assert db3.getOrDefault("foo") == "", "key does not exist, use default"
   db3["foo"] = "bar"
   assert db3.getOrDefault("foo") == "bar", "key there, use value"
@@ -154,7 +154,7 @@ block:
   t.reset()
 
 block:
-  let db4 = db.initDatabase("db4")
+  let db4 = db.initDatabase[:string, string]("db4")
   assert db4.hasKeyOrPut("foo", "bar") == false, "returns false if key not in database"
   assert db4["foo"] == "bar", "value was set"
   assert db4.hasKeyOrPut("foo", "fuz"), "returns true if key in database"
@@ -169,7 +169,7 @@ block:
   t.reset
 
 block:
-  let db5 = db.initDatabase("db5")
+  let db5 = db.initDatabase[:string, string]("db5")
   let s = db5.getOrPut("foo", "bar")
   assert s == "bar", "value was returned"
   assert db5["foo"] == "bar", "value was put"
@@ -186,7 +186,7 @@ block:
   t.reset
 
 block:
-  let db6 = db.initDatabase("db6")
+  let db6 = db.initDatabase[:string, string]("db6")
   var val: string
   assert not db6.pop("foo", val), "not there"
   assert not db6.take("foo", val), "not there"
@@ -219,7 +219,7 @@ block:
 
 when NimMajor >= 1 and NimMinor >= 4:
   block:
-    let db7 = db.initDatabase("db7")
+    let db7 = db.initDatabase[:string, string]("db7")
     with db7:
       t["foo"] = "bar"
       t["fuz"] = "buz"
@@ -243,13 +243,13 @@ when NimMajor >= 1 and NimMinor >= 4:
     # TODO: Test for defect on manual reset/commit
 
 block:
-  let db8 = db.initDatabase("db8", int, int)
+  let db8 = db.initDatabase[:int, int]("db8")
   db8[123] = 456
   assert db8[123] == 456
 
 
 block:
-  let db9 = db.initDatabase("db9", int, string)
+  let db9 = db.initDatabase[:int, string]("db9")
   db9[3] = "fuz"
   db9[1] = "foo"
   db9[4] = "buz"
@@ -263,7 +263,7 @@ block:
 const p = "/tmp/db"
 
 block:
-  let db10 = db.initDatabase("db10", int, int)
+  let db10 = db.initDatabase[:int, int]("db10")
   with db10:
     t[3] = 3
     t[2] = 2
@@ -274,7 +274,7 @@ block:
     assert t[3] == 3
 
 block:
-  let db11 = db.initDatabase("db11", float, int)
+  let db11 = db.initDatabase[:float, int]("db11")
 
   with db11:
     t[3.1] = 3
@@ -286,7 +286,7 @@ block:
     assert t[3.1] == 3
 
 block:
-  let db12 = db.initDatabase("db12")
+  let db12 = db.initDatabase[:string, string]("db12")
   with db12:
     t["foo"] = "c"
     t["bar"] = "b"
@@ -299,7 +299,7 @@ block:
   assert r == {"bar": "b", "foo": "c", "fuz": "a"}
 
 block:
-  let db13 = db.initDatabase("db13", array[3, float], string)
+  let db13 = db.initDatabase[:array[3, float], string]("db13")
 
   with db13:
     t[ [1.1, 2.2, 3.3] ] = "foo"
@@ -321,7 +321,7 @@ type Foo = object
   b: array[3, int]
 
 block:
-  let db14 = db.initDatabase("db14", Foo, float)
+  let db14 = db.initDatabase[:Foo, float]("db14")
 
   with db14:
 
@@ -330,7 +330,7 @@ block:
   assert db14[ Foo( a: 1, b: [4,5,6]) ] == 1.1
 
 block:
-  let db15 = db.initDatabase("db15", int, Foo)
+  let db15 = db.initDatabase[:int, Foo]("db15")
 
   with db15:
     t[ 0 ] = Foo( a: 1, b: [1,2,3] )
@@ -343,7 +343,7 @@ block:
   assert r == {0: Foo( a: 1, b: [1,2,3] ), 1: Foo( a: 2, b: [4,5,6] )}
 
 block:
-  let db16 = db.initDatabase("db16", (int, int), tuple[a: int, b: int])
+  let db16 = db.initDatabase[:(int, int), tuple[a: int, b: int]]("db16")
 
   db16[ (2, 4) ] = (a: 2, b: 4)
   db16[ (6, 8) ] = (a: 6, b: 8)
