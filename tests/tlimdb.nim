@@ -355,3 +355,29 @@ block:
   
   assert r == { (2, 4): (a: 2, b: 4), (6, 8): (a: 6, b: 8) }
 
+block:
+  let db17 = db.initDatabase[:int, seq[float]]("db17")
+
+  with db17:
+    t[0] = @[1.0,2.0,3.0]
+    assert t[0] == @[1.0,2.0,3.0]
+
+type
+  FooNum = enum
+    foo, bar, fuz, buz
+  LetterNum = enum
+    a = 10, b = 20, c = 30, d = 40
+
+block:
+  let db18 = db.initDatabase[:FooNum, LetterNum]("db18")
+
+  with db18:
+
+    t[foo] = c
+    t[fuz] = d
+
+  assert db18[foo] == c
+  assert db18[fuz] == d
+
+
+
