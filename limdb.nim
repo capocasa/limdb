@@ -59,7 +59,7 @@ proc initDatabase*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760
   discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
 
-proc compare(a, b: SomeNumber): int =
+proc compare(a, b: SomeNumber | SomeOrdinal): int =
   if a < b:
     -1
   elif a > b:
@@ -113,40 +113,44 @@ proc toBlob*(s: string): Blob =
   result.mvSize = s.len.uint
   result.mvData = s.cstring
 
-template toBlob*(x: SomeNumber | array | tuple | object): Blob =
-  ## Convert a string to a chunk of data, key or value, for LMDB
-  ##
-  ## .. note::
-  ##     If you want other data types than a string, implement this for the data type
+template toBlob*(x: SomeNumber | SomeOrdinal | array | tuple | object): Blob =
+  ## Convert standard Nim data types to a chunk of data, key or value, for LMDB
   Blob(mvSize: sizeof(x).uint, mvData: cast[pointer](x.unsafeAddr))
+
+template toBlob*[T](s: seq[T]): Blob =
+  Blob(mvSize: uint(sizeof(T) * s.len), mvData: cast[pointer](s[0].unsafeAddr))
 
 proc fromBlob*(b: Blob, T: typedesc[string]): string =
   ## Convert a chunk of data, key or value, to a string
   ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
-  result = newStringOfCap(b.mvSize)
   result.setLen(b.mvSize)
   copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
 
-proc fromBlob*(b: Blob, T: typedesc[SomeNumber | array | tuple | object]): T =
+proc fromBlob*(b: Blob, T: typedesc[SomeNumber | SomeOrdinal | array | tuple | object]): T =
   ## Convert a chunk of data, key or value, to a string
-  ##
-  ## .. note::
-  ##     If you want other data types than a string, implement this for the data type
-  result = cast[ptr T](b.mvData)[]
+  cast[ptr T](b.mvData)[]
+
+template elementType[X](s: seq[X]): typedesc =
+  # don't know how to do this in fromBlob without the helper...
+  X
+
+proc fromBlob*[U](b: Blob, T: typedesc[seq[U]]): seq[U] =
+  ## Convert a chunk of data, key or value, to a seq
+  result.setLen(b.mvSize.int div sizeof U)
+  copyMem(result[0].addr, b.mvData, b.mvSize)
 
 proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   # Read a value from a key in a transaction
   var k = key.toBlob
   var d: Blob
   let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
-  if err == 0:
-    result = fromBlob(d, B)
-  elif err == lmdb.NOTFOUND:
+  if err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
-  else:
+  elif err != 0:
     raise newException(Exception, $strerror(err))
+  fromBlob(d, B)
 
 proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   # Writes a value to a key in a transaction
