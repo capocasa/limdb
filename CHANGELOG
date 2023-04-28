@@ -1,3 +1,8 @@
+0.3.0      support all of Nim's basic system types through generics
+           -> breaks compatibility, must provide types
+           support read-only transactions
+           add transaction block automatically chosing read and write
+           use writable memory-mapped mode for performance
 
 0.2.0      add getOrDefault, hasKeyOrPut, getOrPut, proc and take
 
