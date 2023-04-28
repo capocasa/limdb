@@ -55,7 +55,7 @@ proc initDatabase*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
-  result.env = newLMDBEnv(filename, maxdbs)
+  result.env = newLMDBEnv(filename, maxdbs, WRITEMAP)
   discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
 
@@ -85,8 +85,8 @@ proc wrapCompare(T: typedesc): auto =
   proc (a, b: ptr Blob): cint {.cdecl.} =
     compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
-proc initTransaction*[A, B](d: Database[A, B]): Transaction[A, B] =
-  ## Start a transaction from a database.
+proc initTransaction*[A, B](d: Database[A, B], writable=true): Transaction[A, B] =
+  ## Start a writable transaction from a database.
   ##
   ## Reads and writes on the transaction will reflect the same
   ## point in time and will not be affected by other writes.
@@ -99,7 +99,9 @@ proc initTransaction*[A, B](d: Database[A, B]): Transaction[A, B] =
   ##     Calling neither `reset` nor `commit` on a transaction can block database access.
   ##     This commonly happens when an exception is raised.
   result.dbi = d.dbi
-  result.txn = d.env.newTxn()
+  let err = txnBegin(d.env, nil, if writable: 0 else: RDONLY, addr(result.txn))
+  if err != 0:
+    raise newException(IOError, "LimDB initTransaction failed: " & $strerror(err))
   when A isnot string:
     if 0 != setCompare(result.txn, result.dbi, cast[ptr CmpFunc](wrapCompare(A))):
       raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
@@ -622,21 +624,29 @@ when NimMajor >= 1 and NimMinor >= 4:
         return newLit(true)
     newLit(false)
 
-  template with*(db: Database, body: untyped) =
+  template withTransaction*(db: Database, t, body: untyped) =
     ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
     ##
     ## .. note::
     ##     Available using Nim 1.4 and above
+    
     block:
-      let t {.inject.} = db.initTransaction
+      const writes = static:
+        proc bodyproc() {.compileTime.} =
+          # dump body into a procedure, the better to check
+          # it for effects using the small macro above at compiletime
+          let t = db.initTransaction
+          body
+
+        # prevent manual reset/commit, auto-determine readonly status
+        when callsTaggedAs(bodyproc, "Concludes"):
+          raise newException(LimDefect, "Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+        callsTaggedAs(bodyproc, "Writes")
+
+      let t {.inject.} = db.initTransaction(writes)
       try:
         body
-        proc bodyproc() {.compileTime.} =
-          body
-        static:
-          when callsTaggedAs(bodyproc, "Concludes"):
-            raise newException(LimDefect, "Transaction in a `with` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
-        when callsTaggedAs(bodyproc, "Writes"):
+        when writes:
           t.commit
         else:
           t.reset
@@ -644,4 +654,9 @@ when NimMajor >= 1 and NimMinor >= 4:
         t.reset
         raise
 
+  template tx*(d: Database, body:untyped) =
+    ## Ultra-shorthand transaction
+    ##
+    ## Equivalent to `withTransaction(d, tx):
+    withTransaction d, tx, body
 

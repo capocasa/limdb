@@ -220,19 +220,19 @@ block:
 when NimMajor >= 1 and NimMinor >= 4:
   block:
     let db7 = db.initDatabase[:string, string]("db7")
-    with db7:
+    db7.withTransaction t:
       t["foo"] = "bar"
       t["fuz"] = "buz"
 
     assert db7["foo"] == "bar", "written through transaction"
     assert db7["fuz"] == "buz", "written through transaction"
 
-    with db7:
-      assert t["foo"] == "bar", "read through transaction"
-      assert t["fuz"] == "buz", "read through transaction"
+    db7.withTransaction(tt):
+      assert tt["foo"] == "bar", "read through transaction"
+      assert tt["fuz"] == "buz", "read through transaction"
 
     try:
-      with db7:
+      withTransaction(db7, t):
         t["buz"] = "buz"
         raise newException(CatchableError, "catch me if you can")
     except CatchableError:
@@ -264,7 +264,7 @@ const p = "/tmp/db"
 
 block:
   let db10 = db.initDatabase[:int, int]("db10")
-  with db10:
+  db10.withTransaction(t):
     t[3] = 3
     t[2] = 2
     t[1] = 1
@@ -276,7 +276,7 @@ block:
 block:
   let db11 = db.initDatabase[:float, int]("db11")
 
-  with db11:
+  db11.withTransaction(t):
     t[3.1] = 3
     t[2.1] = 2
     t[1.1] = 1
@@ -287,7 +287,7 @@ block:
 
 block:
   let db12 = db.initDatabase[:string, string]("db12")
-  with db12:
+  db12.withTransaction(t):
     t["foo"] = "c"
     t["bar"] = "b"
     t["fuz"] = "a"
@@ -301,7 +301,7 @@ block:
 block:
   let db13 = db.initDatabase[:array[3, float], string]("db13")
 
-  with db13:
+  db13.withTransaction(t):
     t[ [1.1, 2.2, 3.3] ] = "foo"
     t[ [2.1, 2.2, 3.3] ] = "fuz"
     t[ [1.1, 2.2, 3.4] ] = "bar"
@@ -323,7 +323,7 @@ type Foo = object
 block:
   let db14 = db.initDatabase[:Foo, float]("db14")
 
-  with db14:
+  db14.withTransaction(t):
 
     t[ Foo( a: 1, b: [4,5,6] ) ] = 1.1
 
@@ -332,7 +332,7 @@ block:
 block:
   let db15 = db.initDatabase[:int, Foo]("db15")
 
-  with db15:
+  db15.withTransaction(t):
     t[ 0 ] = Foo( a: 1, b: [1,2,3] )
     t[ 1 ] = Foo( a: 2, b: [4,5,6] )
   
@@ -349,7 +349,7 @@ block:
   db16[ (6, 8) ] = (a: 6, b: 8)
   
   var r: seq[((int, int), tuple[a: int, b: int])]
-  with db16:
+  db16.withTransaction(t):
     for k, v in t:
       r.add((k, v))
   
@@ -358,7 +358,7 @@ block:
 block:
   let db17 = db.initDatabase[:int, seq[float]]("db17")
 
-  with db17:
+  db17.withTransaction(t):
     t[0] = @[1.0,2.0,3.0]
     assert t[0] == @[1.0,2.0,3.0]
 
@@ -371,10 +371,9 @@ type
 block:
   let db18 = db.initDatabase[:FooNum, LetterNum]("db18")
 
-  with db18:
-
-    t[foo] = c
-    t[fuz] = d
+  db18.tx:  # ultra-shorthand
+    tx[foo] = c
+    tx[fuz] = d
 
   assert db18[foo] == c
   assert db18[fuz] == d
