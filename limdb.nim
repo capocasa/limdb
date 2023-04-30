@@ -40,6 +40,9 @@ type
 
   LimDefect* = object of Defect
 
+  WriteMode* = enum
+    autoselect, readwrite, readonly
+
 proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
   let dummy = d.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
@@ -85,7 +88,7 @@ proc wrapCompare(T: typedesc): auto =
   proc (a, b: ptr Blob): cint {.cdecl.} =
     compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
-proc initTransaction*[A, B](d: Database[A, B], writable=true): Transaction[A, B] =
+proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
   ## Start a writable transaction from a database.
   ##
   ## Reads and writes on the transaction will reflect the same
@@ -99,7 +102,14 @@ proc initTransaction*[A, B](d: Database[A, B], writable=true): Transaction[A, B]
   ##     Calling neither `reset` nor `commit` on a transaction can block database access.
   ##     This commonly happens when an exception is raised.
   result.dbi = d.dbi
-  let err = txnBegin(d.env, nil, if writable: 0 else: RDONLY, addr(result.txn))
+  let flags = case writeMode:
+    of readwrite:
+      0
+    of readonly:
+      RDONLY
+    else:
+      raise newException(IOError, "only withTransaction and other block transactions can autoselect write mode")
+  let err = txnBegin(d.env, nil, flags.cuint, addr(result.txn))
   if err != 0:
     raise newException(IOError, "LimDB initTransaction failed: " & $strerror(err))
   when A isnot string:
@@ -624,18 +634,18 @@ when NimMajor >= 1 and NimMinor >= 4:
         return newLit(true)
     newLit(false)
 
-  template withTransaction*(db: Database, t, body: untyped) =
+  template transaction*(d: Database, t, w, body: untyped) =
     ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
     ##
     ## .. note::
     ##     Available using Nim 1.4 and above
-    
+
     block:
       const writes = static:
         proc bodyproc() {.compileTime.} =
           # dump body into a procedure, the better to check
           # it for effects using the small macro above at compiletime
-          let t = db.initTransaction
+          let t = d.initTransaction
           body
 
         # prevent manual reset/commit, auto-determine readonly status
@@ -643,7 +653,22 @@ when NimMajor >= 1 and NimMinor >= 4:
           raise newException(LimDefect, "Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
         callsTaggedAs(bodyproc, "Writes")
 
-      let t {.inject.} = db.initTransaction(writes)
+      let txMode = case w:
+        of autoselect:
+          if writes:
+            readwrite
+          else:
+            readonly
+        of readonly:
+          when writes:
+            raise newException(LimDefect, "Cannot write to transaction block marked readonly")
+          readonly
+        of readwrite:
+          static:
+            when not writes:
+              hint("Transaction block marked read-only but not written to")
+          readwrite
+      let t {.inject.} = d.initTransaction(txMode)
       try:
         body
         when writes:
@@ -653,10 +678,16 @@ when NimMajor >= 1 and NimMinor >= 4:
       except CatchableError:
         t.reset
         raise
+  
+  template withTransaction*(d: Database, t, w, body: untyped) =
+    transaction d, t, w, body
+
+  template withTransaction*(d: Database, t, body: untyped) =
+    transaction d, t, autoselect, body
 
   template tx*(d: Database, body:untyped) =
     ## Ultra-shorthand transaction
     ##
     ## Equivalent to `withTransaction(d, tx):
-    withTransaction d, tx, body
+    transaction d, tx, autoselect, body
 
