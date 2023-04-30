@@ -227,7 +227,7 @@ when NimMajor >= 1 and NimMinor >= 4:
     assert db7["foo"] == "bar", "written through transaction"
     assert db7["fuz"] == "buz", "written through transaction"
 
-    db7.withTransaction(tt):
+    db7.withTransaction tt:
       assert tt["foo"] == "bar", "read through transaction"
       assert tt["fuz"] == "buz", "read through transaction"
 
@@ -377,6 +377,16 @@ block:
 
   assert db18[foo] == c
   assert db18[fuz] == d
+ 
+  # force writable
+  db18.withTransaction t, readwrite:
+    t[bar] = a
+    t[buz] = b
+
+  # read only
+  db18.withTransaction abc, readonly:
+    assert abc[bar] == a
+    assert abc[buz] == b
 
 
 
