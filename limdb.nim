@@ -41,7 +41,7 @@ type
   LimDefect* = object of Defect
 
   WriteMode* = enum
-    autoselect, readwrite, readonly
+    autoselect, readwrite, readonly, au, rw, ro
 
 proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
@@ -103,9 +103,9 @@ proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transacti
   ##     This commonly happens when an exception is raised.
   result.dbi = d.dbi
   let flags = case writeMode:
-    of readwrite:
+    of rw, readwrite:
       0
-    of readonly:
+    of ro, readonly:
       RDONLY
     else:
       raise newException(IOError, "only withTransaction and other block transactions can autoselect write mode")
@@ -116,6 +116,8 @@ proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transacti
     if 0 != setCompare(result.txn, result.dbi, cast[ptr CmpFunc](wrapCompare(A))):
       raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
 
+template initTransaction*[A, B](d: Database[A, B], t: Transaction, writeMode = readwrite): Transaction[A, B] =
+  Transaction[A, B](dbi = d.dbi, txn: t.txn)
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -634,12 +636,16 @@ when NimMajor >= 1 and NimMinor >= 4:
         return newLit(true)
     newLit(false)
 
-  template transaction*(d: Database, t, w, body: untyped) =
+  template transaction*(d: Database, t, writeMode, body: untyped) =
     ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
     ##
     ## .. note::
     ##     Available using Nim 1.4 and above
-
+    static:
+      when writeMode isnot WriteMode:
+        # Cannot use WriteMode type for param because untyped param positions must 
+        # match for overloaded templates. So at least check the type manually
+        raise newException(LimDefect, "Parameter w must be of type WriteMode")
     block:
       const writes = static:
         proc bodyproc() {.compileTime.} =
@@ -653,17 +659,17 @@ when NimMajor >= 1 and NimMinor >= 4:
           raise newException(LimDefect, "Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
         callsTaggedAs(bodyproc, "Writes")
 
-      let txMode = case w:
-        of autoselect:
+      let txMode = case writeMode:
+        of au, autoselect:
           if writes:
             readwrite
           else:
             readonly
-        of readonly:
+        of ro, readonly:
           when writes:
             raise newException(LimDefect, "Cannot write to transaction block marked readonly")
           readonly
-        of readwrite:
+        of rw, readwrite:
           static:
             when not writes:
               hint("Transaction block marked read-only but not written to")
@@ -679,15 +685,39 @@ when NimMajor >= 1 and NimMinor >= 4:
         t.reset
         raise
   
-  template withTransaction*(d: Database, t, w, body: untyped) =
-    transaction d, t, w, body
+  template withTransaction*(d: Database, t, writeMode, body: untyped) =
+    transaction d, t, writeMode, body
 
   template withTransaction*(d: Database, t, body: untyped) =
     transaction d, t, autoselect, body
 
-  template tx*(d: Database, body:untyped) =
+
+  # The ultra shorthand mode implementation is a bit
+  # of a hack. tx var can only
+  # be injected if there is at most one tx template
+  # so couldn't overload or use macro- so select by varargs
+  # in tx template below, implementation in tx2 and tx3
+
+  template tx3(d, writeMode, body: untyped) =
+    transaction d, tx, writeMode, body
+  
+  template tx2(d, body: untyped) =
+    transaction d, tx, au, body
+
+  template tx*(args: varargs[untyped]) =
     ## Ultra-shorthand transaction
     ##
-    ## Equivalent to `withTransaction(d, tx):
-    transaction d, tx, autoselect, body
+    ## Equivalent to `withTransaction(d, tx)`
+    ##
+    ## Can only be forced readonly or readwrite using
+    ## `db.tx ro` and `db.tx rw`
+    when varargsLen(args) == 3:
+      tx3(args)
+    elif varargsLen(args) == 2:
+      tx2(args)
+    elif varargsLen(args) == 0:
+      error("need code block", args)
+    else:
+      error("too many params", args)
+
 
