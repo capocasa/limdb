@@ -381,12 +381,15 @@ block:
   # force writable
   db18.withTransaction t, readwrite:
     t[bar] = a
-    t[buz] = b
+  
+  db18.tx:
+    tx[buz] = b
 
   # read only
   db18.withTransaction abc, readonly:
     assert abc[bar] == a
-    assert abc[buz] == b
 
+  db18.tx ro:
+    assert tx[buz] == b
 
 
