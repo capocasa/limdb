@@ -191,7 +191,7 @@ proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   if err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   elif err != 0:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
   fromBlob(d, B)
 
 proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
@@ -204,7 +204,7 @@ proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   elif err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   else:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
 proc del*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   ## Delete a key-value pair
@@ -218,7 +218,7 @@ proc del*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   elif err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   else:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
 template del*[A, B](t: Transaction[A, B], key: A) =
   ## Delete a value in a transaction
@@ -332,7 +332,7 @@ iterator keys*[A, B](t: Transaction[A, B]): A =
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
@@ -352,7 +352,7 @@ iterator values*[A, B](t: Transaction[A, B]): B =
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
@@ -371,7 +371,7 @@ iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
       yield d[]
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-        raise newException(Exception, $strerror(err))
+        raise newException(IOError, $strerror(err))
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
@@ -381,11 +381,11 @@ iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
           yield d[]
           var mdata = d[].toBlob
           if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-            raise newException(Exception, $strerror(err))
+            raise newException(IOError, $strerror(err))
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
@@ -405,7 +405,7 @@ iterator pairs*[A, B](t: Transaction[A, B]): (A, B) =
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
@@ -424,7 +424,7 @@ iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
       yield (fromBlob(key, A), d[])
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-        raise newException(Exception, $strerror(err))
+        raise newException(IOError, $strerror(err))
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
@@ -434,11 +434,11 @@ iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
           yield (fromBlob(key, A), d[])
           var mdata = d[].toBlob
           if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-            raise newException(Exception, $strerror(err))
+            raise newException(IOError, $strerror(err))
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
@@ -522,7 +522,7 @@ proc copy*[A, B](d: Database[A, B], filename: string) =
   ## when no one is writing to the database directory.
   let err = envCopy(d.env, filename.cstring)
   if err != 0:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
 template clear*[A, B](t: Transaction[A, B]) =
   ## Remove all key-values pairs from the database, emptying it.
