@@ -399,3 +399,18 @@ block:
   let db21 = db.initDatabase[:string, int]("db122")
 
   let t = initTransaction((db19, db20, db21))
+  t[0][3] = "foo"
+  t[1][1.1] = 2.2
+  t[2]["bar"] = 6
+  t[0].commit
+
+  assert db19[3] == "foo"
+  assert db20[1.1] == 2.2
+  assert db21["bar"] == 6
+
+  try:
+    t[1][3.3] = 4.4
+    assert false, "transaction committed"
+  except IOError:
+    discard
+
