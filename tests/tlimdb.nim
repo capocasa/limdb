@@ -393,3 +393,9 @@ block:
     assert tx[buz] == b
 
 
+block:
+  let db19 = db.initDatabase[:int, string]("db19")
+  let db20 = db.initDatabase[:float, float]("db21")
+  let db21 = db.initDatabase[:string, int]("db122")
+
+  let t = initTransaction((db19, db20, db21))

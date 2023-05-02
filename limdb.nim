@@ -38,8 +38,6 @@ type
   Concludes* = object
     ## A tag to track commits and rollbacks
 
-  LimDefect* = object of Defect
-
   WriteMode* = enum
     autoselect, readwrite, readonly, au, rw, ro
 
@@ -89,7 +87,7 @@ proc wrapCompare(T: typedesc): auto =
     compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
 proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
-  ## Start a writable transaction from a database.
+  ## Start a transaction from a database.
   ##
   ## Reads and writes on the transaction will reflect the same
   ## point in time and will not be affected by other writes.
@@ -117,7 +115,41 @@ proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transacti
       raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
 
 template initTransaction*[A, B](d: Database[A, B], t: Transaction, writeMode = readwrite): Transaction[A, B] =
-  Transaction[A, B](dbi = d.dbi, txn: t.txn)
+  ## Expand an open transaction to include another database.
+  ##
+  ## This is used to make changes to more than one database within the same transaction.
+  ##
+  ## Note that the databases need to have been derived from only one database on the same directory.
+  Transaction[A, B](dbi: d.dbi, txn: t.txn)
+
+macro initTransaction*(d: tuple, writeMode = readwrite): untyped =
+  ## Start a transaction that spans more than one database.
+  ##
+  ## Each database is specified in a named or non-named tuple, and a transaction
+  ## object representing the same transaction for each database is returned in
+  ## an equivalent tuple: If it is named, the transaction object has the same
+  ## name as its database in the returned tuple. If it is unnamed, the same position.
+  ##
+  ## .. note::
+  ##     Once `commit` or `reset` is called on any of the transaction objects,
+  ##     the transaction is complete.
+  result = newNimNode nnkBlockStmt
+  let l = newNimNode nnkStmtList
+  result.add newNimNode nnkEmpty
+  result.add l
+  let x = newNimNode nnkTupleConstr
+  var i = 0
+  for c in d.children:
+    if i == 0:
+      l.add quote do:
+        let t {.inject.} = `c`.initTransaction(`writeMode`)
+      x.add quote do:
+        t
+      l.add x
+    else:
+      x.add quote do:
+        `c`.initTransaction(t, `writeMode`)
+    i += 1
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -145,10 +177,6 @@ proc fromBlob*(b: Blob, T: typedesc[string]): string =
 proc fromBlob*(b: Blob, T: typedesc[SomeNumber | SomeOrdinal | array | tuple | object]): T =
   ## Convert a chunk of data, key or value, to a string
   cast[ptr T](b.mvData)[]
-
-template elementType[X](s: seq[X]): typedesc =
-  # don't know how to do this in fromBlob without the helper...
-  X
 
 proc fromBlob*[U](b: Blob, T: typedesc[seq[U]]): seq[U] =
   ## Convert a chunk of data, key or value, to a seq
@@ -243,7 +271,7 @@ proc `[]=`*[A, B](d: Database[A, B], key: A, val: B) =
   let t = d.initTransaction
   try:
     t[key] = val
-  except:
+  except CatchableError:
     t.reset()
     raise
   t.commit()
@@ -256,7 +284,7 @@ proc del*[A, B](d: Database[A, B], key: A, val: B) =
   let t = d.initTransaction
   try:
     t.del(key, val)
-  except:
+  except CatchableError:
     t.reset()
     raise
   t.commit()
@@ -273,7 +301,7 @@ proc del*[A, B](d: Database[A, B], key: A) =
   let t = d.initTransaction
   try:
     t.del(key)
-  except:
+  except CatchableError:
     t.reset()
     raise
   t.commit()
@@ -555,7 +583,7 @@ proc hasKeyOrPut*[A, B](d: Database[A, B], key: A, val: B): bool =
     else:
       t[key] = val
       t.commit
-  except:
+  except CatchableError:
     t.reset
     raise
 
@@ -587,7 +615,7 @@ proc pop*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
     true
   except KeyError:
     false
-  except:
+  except CatchableError:
     t.reset
     raise
 
@@ -603,7 +631,7 @@ proc pop*[A, B](d: Database[A, B], key: A, val: var B): bool =
   except KeyError:
     t.reset
     false
-  except:
+  except CatchableError:
     t.reset
     raise
 
@@ -645,7 +673,7 @@ when NimMajor >= 1 and NimMinor >= 4:
       when writeMode isnot WriteMode:
         # Cannot use WriteMode type for param because untyped param positions must 
         # match for overloaded templates. So at least check the type manually
-        raise newException(LimDefect, "Parameter w must be of type WriteMode")
+        error("Parameter writeMode must be of type WriteMode")
     block:
       const writes = static:
         proc bodyproc() {.compileTime.} =
@@ -656,10 +684,11 @@ when NimMajor >= 1 and NimMinor >= 4:
 
         # prevent manual reset/commit, auto-determine readonly status
         when callsTaggedAs(bodyproc, "Concludes"):
-          raise newException(LimDefect, "Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+          error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
         callsTaggedAs(bodyproc, "Writes")
 
-      let txMode = case writeMode:
+      let txMode = static:
+        case writeMode:
         of au, autoselect:
           if writes:
             readwrite
@@ -667,12 +696,11 @@ when NimMajor >= 1 and NimMinor >= 4:
             readonly
         of ro, readonly:
           when writes:
-            raise newException(LimDefect, "Cannot write to transaction block marked readonly")
+            error("Cannot write to transaction block marked readonly")
           readonly
         of rw, readwrite:
-          static:
-            when not writes:
-              hint("Transaction block marked read-only but not written to")
+          when not writes:
+            hint("Transaction block marked readwrite but not written to. Consider marking it read-only or leaving at autoselect transaction")
           readwrite
       let t {.inject.} = d.initTransaction(txMode)
       try:
@@ -719,5 +747,3 @@ when NimMajor >= 1 and NimMinor >= 4:
       error("need code block", args)
     else:
       error("too many params", args)
-
-
