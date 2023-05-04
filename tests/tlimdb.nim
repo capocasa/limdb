@@ -404,13 +404,30 @@ block:
   t[2]["bar"] = 6
   t[0].commit
 
-  assert db19[3] == "foo"
-  assert db20[1.1] == 2.2
-  assert db21["bar"] == 6
+  let dbs = (db19, db20, db21)
+  let (t19, t20, t21) = initTransaction(dbs, readonly)
+  assert t19[3] == "foo"
+  assert t20[1.1] == 2.2
+  assert t21["bar"] == 6
+  t19.reset
 
   try:
     t[1][3.3] = 4.4
     assert false, "transaction committed"
-  except IOError:
+  except IOError: # transaction no longer valid
     discard
+
+  let dbs2 = (x19: db19, x20: db20, x21: db21)
+  let v = initTransaction(dbs2)
+  v.x19[6] = "fuz"
+  v.x20[3.3] = 6.6
+  v.x21["buz"] = 12
+  v.x19.commit
+  
+  let w = initTransaction (x19: db19, x20: db20, x21: db21)
+  assert w.x19[6] == "fuz"
+  assert w.x20[3.3] == 6.6
+  assert w.x21["buz"] == 12
+  w.x19.reset
+
 

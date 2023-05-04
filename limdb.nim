@@ -114,42 +114,13 @@ proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transacti
     if 0 != setCompare(result.txn, result.dbi, cast[ptr CmpFunc](wrapCompare(A))):
       raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
 
-template initTransaction*[A, B](d: Database[A, B], t: Transaction, writeMode = readwrite): Transaction[A, B] =
+template initTransaction*[A, B](d: Database[A, B], t: Transaction): Transaction[A, B] =
   ## Expand an open transaction to include another database.
   ##
   ## This is used to make changes to more than one database within the same transaction.
   ##
   ## Note that the databases need to have been derived from only one database on the same directory.
   Transaction[A, B](dbi: d.dbi, txn: t.txn)
-
-macro initTransaction*(d: tuple, writeMode = readwrite): untyped =
-  ## Start a transaction that spans more than one database.
-  ##
-  ## Each database is specified in a named or non-named tuple, and a transaction
-  ## object representing the same transaction for each database is returned in
-  ## an equivalent tuple: If it is named, the transaction object has the same
-  ## name as its database in the returned tuple. If it is unnamed, the same position.
-  ##
-  ## .. note::
-  ##     Once `commit` or `reset` is called on any of the transaction objects,
-  ##     the transaction is complete.
-  result = newNimNode nnkBlockStmt
-  let l = newNimNode nnkStmtList
-  result.add newNimNode nnkEmpty
-  result.add l
-  let x = newNimNode nnkTupleConstr
-  var i = 0
-  for c in d.children:
-    if i == 0:
-      l.add quote do:
-        let t {.inject.} = `c`.initTransaction(`writeMode`)
-      x.add quote do:
-        t
-      l.add x
-    else:
-      x.add quote do:
-        `c`.initTransaction(t, `writeMode`)
-    i += 1
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -747,3 +718,52 @@ when NimMajor >= 1 and NimMinor >= 4:
       error("need code block", args)
     else:
       error("too many params", args)
+
+macro initTransaction*(d: tuple, writeMode = readwrite): untyped =
+  ## Start a transaction that spans more than one database.
+  ##
+  ## Each database is specified in a named or non-named tuple, and a transaction
+  ## object representing the same transaction for each database is returned in
+  ## an equivalent tuple: If it is named, the transaction object has the same
+  ## name as its database in the returned tuple. If it is unnamed, the same position.
+  ##
+  ## .. note::
+  ##     Once `commit` or `reset` is called on any of the transaction objects,
+  ##     the transaction is complete.
+  when not compiles d[0]:
+    error("tuple must have an element")
+  let resultList = newNimNode nnkStmtList
+  let resultTuple = newNimNode nnkTupleConstr
+  let tupleType = d.getTypeImpl
+  resultList.add quote do:
+    let firstTransaction {.inject.} = `d`[0].initTransaction(`writeMode`)
+  case tupleType[0].getTypeImpl.kind
+  of nnkObjectTy:
+    # input is regular tuple
+    for i in 0..<tupleType.len:
+      if i == 0:
+        resultTuple.add quote do:
+          firstTransaction
+      else:
+        resultTuple.add quote do:
+          `d`[`i`].initTransaction(firstTransaction)
+  of nnkTupleTy:
+    # input is named tuple
+    for i, tupleTypeElement in tupleType:
+      var tupleElement = newNimNode nnkExprColonExpr
+      tupleElement.add ident tupleTypeElement[0].repr
+      if i == 0:
+        tupleElement.add quote do:
+          firstTransaction
+      else:
+        tupleElement.add quote do:
+          `d`[`i`].initTransaction(firstTransaction)
+      resultTuple.add tupleElement
+  else:
+    error("d param must be named or regular tuple")
+  resultList.add resultTuple
+  result = newNimNode nnkBlockStmt  # own scope to hide firstTransaction variable
+  result.add newNimNode nnkEmpty
+  result.add resultList
+
+
