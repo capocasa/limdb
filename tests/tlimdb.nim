@@ -405,29 +405,51 @@ block:
   t[0].commit
 
   let dbs = (db19, db20, db21)
-  let (t19, t20, t21) = initTransaction(dbs, readonly)
-  assert t19[3] == "foo"
-  assert t20[1.1] == 2.2
-  assert t21["bar"] == 6
-  t19.reset
+  let (t0, t1, t2) = initTransaction(dbs, readonly)
+  assert t0[3] == "foo"
+  assert t1[1.1] == 2.2
+  assert t2["bar"] == 6
+  t0.reset
 
   try:
     t[1][3.3] = 4.4
     assert false, "transaction committed"
   except IOError: # transaction no longer valid
     discard
-
-  let dbs2 = (x19: db19, x20: db20, x21: db21)
-  let v = initTransaction(dbs2)
-  v.x19[6] = "fuz"
-  v.x20[3.3] = 6.6
-  v.x21["buz"] = 12
-  v.x19.commit
   
-  let w = initTransaction (x19: db19, x20: db20, x21: db21)
-  assert w.x19[6] == "fuz"
-  assert w.x20[3.3] == 6.6
-  assert w.x21["buz"] == 12
-  w.x19.reset
+  dbs.withTransaction t:
+    assert t[0][3] == "foo"
+    t[0][4] = "bar"
+  assert db19[4] == "bar"
 
+  let dbs2 = (a: db19, b: db20, c: db21)
+  let v = initTransaction(dbs2)
+  v.a[6] = "fuz"
+  v.b[3.3] = 6.6
+  v.c["buz"] = 12
+  v.commit
+
+  let w = (a: db19, b: db20, c: db21).initTransaction readonly
+  assert w.a[6] == "fuz"
+  assert w.b[3.3] == 6.6
+  assert w.c["buz"] == 12
+  w.reset
+
+  dbs2.withTransaction t, readwrite:
+    assert t.a[6] == "fuz"
+    t.a[7] = "buz"
+  assert db19[7] == "buz"
+
+  dbs.tx:
+    tx[0][5] = "fuz"
+  dbs.tx ro:
+    assert tx[0][5] == "fuz"
+
+  dbs2.tx rw:
+    tx.a[9] = "foo"
+  dbs2.tx:
+    assert tx.a[9] == "foo"
+  # TODO: test static errors.
+  # `db[1] = 2` in explicit readonly for initTransaction, withTransaction and tx
+  # `t.commit/t.reset` in transaction block
 
