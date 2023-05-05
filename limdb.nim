@@ -41,13 +41,33 @@ type
   WriteMode* = enum
     autoselect, readwrite, readonly, au, rw, ro
 
+  Databases* = concept dbs
+    ## A type to represent a named or unnamed tuple containing
+    ## several Database objects with same or different sub-types.
+    ##
+    ## This is typically used to represent different databases
+    ## stored in the same directory
+    dbs is tuple
+    for db in dbs.fields:
+      db is Database
+
+  Transactions* = concept ts
+    ## A type to represent a named or unnamed tuple containing 
+    ## several Transaction objects with the same or different sub-types.
+    ##
+    ## This is typically used to represent transaction objects for different
+    ## databases of the same open transaction.
+    ts is tuple
+    for t in ts.fields:
+      t is Transaction
+
 proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
   let dummy = d.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*[A, B](d: Database, name = "",): Database[A, B] =
+proc initDatabase*[A, B](d: Database, name = ""): Database[A, B] =
   ## Open another database of a different name in an already-connected on-disk storage location.
   result.env = d.env
   result.dbi = result.open(name)
@@ -635,7 +655,7 @@ when NimMajor >= 1 and NimMinor >= 4:
         return newLit(true)
     newLit(false)
 
-  template transaction*(d: Database, t, writeMode, body: untyped) =
+  template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
     ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
     ##
     ## .. note::
@@ -684,10 +704,10 @@ when NimMajor >= 1 and NimMinor >= 4:
         t.reset
         raise
   
-  template withTransaction*(d: Database, t, writeMode, body: untyped) =
+  template withTransaction*(d: Database | Databases, t, writeMode, body: untyped) =
     transaction d, t, writeMode, body
 
-  template withTransaction*(d: Database, t, body: untyped) =
+  template withTransaction*(d: Database | Databases, t, body: untyped) =
     transaction d, t, autoselect, body
 
 
@@ -710,6 +730,9 @@ when NimMajor >= 1 and NimMinor >= 4:
     ##
     ## Can only be forced readonly or readwrite using
     ## `db.tx ro` and `db.tx rw`
+    # TODO: find out how to do this without an immediate
+    # template and a helper immediate template or decide
+    # it can't be done and remove this comment
     when varargsLen(args) == 3:
       tx3(args)
     elif varargsLen(args) == 2:
@@ -719,7 +742,7 @@ when NimMajor >= 1 and NimMinor >= 4:
     else:
       error("too many params", args)
 
-macro initTransaction*(d: tuple, writeMode = readwrite): untyped =
+macro initTransaction*(d: Databases, writeMode = readwrite): untyped =
   ## Start a transaction that spans more than one database.
   ##
   ## Each database is specified in a named or non-named tuple, and a transaction
@@ -766,4 +789,9 @@ macro initTransaction*(d: tuple, writeMode = readwrite): untyped =
   result.add newNimNode nnkEmpty
   result.add resultList
 
+template commit*(t: Transactions) =
+  t[0].commit
+
+template reset*(t: Transactions) =
+  t[0].reset
 
