@@ -10,7 +10,7 @@ import limdb
 
 let testLocation = getTempDir() / "tlimdb"
 removeDir(testLocation)
-let db = initDatabase[string, string](testLocation)
+let db = initDatabase(testLocation)
 
 db["foo"] = "bar"
 assert db["foo"] == "bar", "write and read back"
@@ -364,7 +364,7 @@ block:
 
 type
   FooNum = enum
-    foo, bar, fuz, buz
+    w, x, y, z
   LetterNum = enum
     a = 10, b = 20, c = 30, d = 40
 
@@ -372,25 +372,25 @@ block:
   let db18 = db.initDatabase[:FooNum, LetterNum]("db18")
 
   db18.tx:  # ultra-shorthand
-    tx[foo] = c
-    tx[fuz] = d
+    tx[x] = c
+    tx[z] = d
 
-  assert db18[foo] == c
-  assert db18[fuz] == d
+  assert db18[x] == c
+  assert db18[z] == d
  
   # force writable
   db18.withTransaction t, readwrite:
-    t[bar] = a
+    t[x] = a
   
   db18.tx:
-    tx[buz] = b
+    tx[z] = b
 
   # read only
   db18.withTransaction abc, readonly:
-    assert abc[bar] == a
+    assert abc[x] == a
 
   db18.tx ro:
-    assert tx[buz] == b
+    assert tx[z] == b
 
 
 block:
@@ -452,4 +452,12 @@ block:
   # TODO: test static errors.
   # `db[1] = 2` in explicit readonly for initTransaction, withTransaction and tx
   # `t.commit/t.reset` in transaction block
+
+block:
+  let testLocation2 = getTempDir() / "tlimdb2"
+  removeDir(testLocation2)
+  let dbs = initDatabase(testLocation2, (int, int, foo: int, bar: int, string, fuz: FooNum, LetterNum))
+
+  assert dbs[0] is Database[int, int]
+  assert dbs.foo is Database[int, int]
 

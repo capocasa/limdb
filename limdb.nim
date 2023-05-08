@@ -72,14 +72,6 @@ proc initDatabase*[A, B](d: Database, name = ""): Database[A, B] =
   result.env = d.env
   result.dbi = result.open(name)
 
-proc initDatabase*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
-  ## Connect to an on-disk storage location and open a database. If the path does not exist,
-  ## a directory will be created.
-  createDir(filename)
-  result.env = newLMDBEnv(filename, maxdbs, WRITEMAP)
-  discard envSetMapsize(result.env, uint(size))
-  result.dbi = result.open(name)
-
 proc compare(a, b: SomeNumber | SomeOrdinal): int =
   if a < b:
     -1
@@ -754,7 +746,7 @@ macro initTransaction*(d: Databases, writeMode = readwrite): untyped =
   ##     Once `commit` or `reset` is called on any of the transaction objects,
   ##     the transaction is complete.
   when not compiles d[0]:
-    error("tuple must have an element")
+    error("`d` must be tuple with at least one element")
   let resultList = newNimNode nnkStmtList
   let resultTuple = newNimNode nnkTupleConstr
   let tupleType = d.getTypeImpl
@@ -794,4 +786,74 @@ template commit*(t: Transactions) =
 
 template reset*(t: Transactions) =
   t[0].reset
+
+proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
+  ## Connect to an on-disk storage location and open a database. If the path does not exist,
+  ## a directory will be created.
+  createDir(filename)
+  result.env = newLMDBEnv(filename, maxdbs, WRITEMAP)
+  discard envSetMapsize(result.env, uint(size))
+  result.dbi = result.open(name)
+
+macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 10485760): auto =
+  case names.kind
+  of nnkStrLit:
+    result = quote do: database[string, string](`filename`, `names`)
+  of nnkTupleConstr:
+    let resultList = newNimNode nnkStmtList
+    let resultTuple = newNimNode nnkTupleConstr
+    var name = ""
+    var key: NimNode
+    var val: NimNode
+    var first = true
+
+    template doIt(key, val, name: untyped) =
+      if first:
+        first = false
+        resultList.add quote do:
+          let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`filename.repr`, `name.repr`)
+        resultTuple.add quote do: firstDatabase
+        resultList.add resultTuple
+      else:
+        resultTuple.add quote do: firstDatabase.initDatabase[:`key.repr`, `val.repr`](`name.repr`)
+    for i, n in names:
+      #echo "item ", n.repr
+      case n.kind:
+        of nnkIdent:
+          if key.isNil:
+            name = ""
+            key = n
+            #echo "assign name '' key ", key.repr
+          else:
+            val = n
+            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
+            doIt(key, val, name)
+            name = ""
+            key = nil
+            val = nil
+        of nnkExprColonExpr:
+          if key.isNil:
+            name = n[0].repr
+            key = n[1]
+            #echo "assign name ", name, " key ", key.repr
+          else:
+            if val.isNil:
+              #echo "assign val key ", key
+              val = key
+            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
+            doIt(key, val, name)
+            name = n[0].repr
+            key = n[1]
+            val = nil
+        else:
+          error("Database definition tuple `names` elements must be: dbname keyvaltype dbname:keyvaltype keytype,valtype dbname:keytype,valtype", n)
+    if not key.isNil:
+      val = key
+      doIt(key, val, name)
+    result = newNimNode nnkBlockStmt
+    result.add newNimNode nnkEmpty
+    result.add resultList
+    #echo result.repr
+  else:
+    error("Database definition `names` must be empty, database name as string, or tuple", names)
 
