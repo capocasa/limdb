@@ -798,24 +798,41 @@ proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): D
 macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 10485760): auto =
   case names.kind
   of nnkStrLit:
-    result = quote do: database[string, string](`filename`, `names`)
+    result = quote do: database[string, string](`filename`, `names`, `maxdbs.repr`, `size.repr`)
   of nnkTupleConstr:
-    let resultList = newNimNode nnkStmtList
-    let resultTuple = newNimNode nnkTupleConstr
+    var resultList:NimNode
+    var resultTuple:NimNode
     var name = ""
-    var key: NimNode
-    var val: NimNode
-    var first = true
+    var key:NimNode
+    var val:NimNode
 
-    template doIt(key, val, name: untyped) =
-      if first:
-        first = false
+    template addItemToResultTuple(key, val, name: untyped) =
+
+      if resultList.isNil:
+        resultList = newNimNode nnkStmtList
         resultList.add quote do:
-          let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`filename.repr`, `name.repr`)
-        resultTuple.add quote do: firstDatabase
-        resultList.add resultTuple
+          let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`filename.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
+        if name == "":
+          resultList.add quote do:
+            firstDatabase
+        else:
+          resultTuple = newNimNode nnkTupleConstr
+          resultList.add resultTuple
+          var tupleElement = newNimNode nnkExprColonExpr
+          tupleElement.add ident name
+          tupleElement.add quote do:
+            firstDatabase
+          resultTuple.add tupleElement
       else:
-        resultTuple.add quote do: firstDatabase.initDatabase[:`key.repr`, `val.repr`](`name.repr`)
+        if name == "":
+          error("An unnamed tuple can only create the default database with one or two types. Use a named tuple to create multiple named databases", names)
+        else:
+          var tupleElement = newNimNode nnkExprColonExpr
+          tupleElement.add ident name
+          tupleElement.add quote do:
+            firstDatabase.initDatabase[:`key.repr`, `val.repr`](`name.repr`)
+          resultTuple.add tupleElement
+
     for i, n in names:
       #echo "item ", n.repr
       case n.kind:
@@ -827,7 +844,7 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
           else:
             val = n
             #echo "do it ", key, ' ', val, ' ', '"', name, '"'
-            doIt(key, val, name)
+            addItemToResultTuple(key, val, name)
             name = ""
             key = nil
             val = nil
@@ -841,7 +858,7 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
               #echo "assign val key ", key
               val = key
             #echo "do it ", key, ' ', val, ' ', '"', name, '"'
-            doIt(key, val, name)
+            addItemToResultTuple(key, val, name)
             name = n[0].repr
             key = n[1]
             val = nil
@@ -849,7 +866,7 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
           error("Database definition tuple `names` elements must be: dbname keyvaltype dbname:keyvaltype keytype,valtype dbname:keytype,valtype", n)
     if not key.isNil:
       val = key
-      doIt(key, val, name)
+      addItemToResultTuple(key, val, name)
     result = newNimNode nnkBlockStmt
     result.add newNimNode nnkEmpty
     result.add resultList

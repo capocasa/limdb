@@ -7,6 +7,7 @@
 
 import os
 import limdb
+import typetraits
 
 let testLocation = getTempDir() / "tlimdb"
 removeDir(testLocation)
@@ -456,8 +457,16 @@ block:
 block:
   let testLocation2 = getTempDir() / "tlimdb2"
   removeDir(testLocation2)
-  let dbs = initDatabase(testLocation2, (int, int, foo: int, bar: int, string, fuz: FooNum, LetterNum))
+  let dbs = initDatabase(testLocation2, (foo: int, bar: int, string, fuz: FooNum, LetterNum))
 
-  assert dbs[0] is Database[int, int]
   assert dbs.foo is Database[int, int]
+  assert dbs.bar is Database[int, string]
+  assert dbs.fuz is Database[FooNum, LetterNum]
+  assert dbs.tupleLen == 3
+
+  let db = initDatabase(testLocation2, (int, int))
+  assert db is Database[int, int]
+  
+  # TODO: assert compile error for
+  # let db = initDatabase(testLocation2, (int, int, int))
 
