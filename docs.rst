@@ -29,7 +29,7 @@ or concurrently by different threads or processes.
 .. code-block:: nim
 
     import limdb
-    let db = initDatabase[string, string]("myDirectory")
+    let db = initDatabase("myDirectory")
     db["foo"] = "bar"  # that's it, foo -> bar is now on disk
     echo db["foo"]     # prints bar
 
@@ -37,36 +37,33 @@ Now if you comment out the write, you can run the program again and read the val
     
 .. code-block:: nim
     import limdb
-    let db = initDatabase[string, string]("myDirectory")
+    let db = initDatabase("myDirectory")
     # db["foo"] = "bar"
     echo db["foo"]  # also prints "bar"
 
 That's it. If you just need to quickly save some data, you can stop reading here and start programming.
 
-Reading and writing in blocks
-#############################
+Transactions
+############
 
-It's usually good practice to organize related reads and writes to any database into a kind of unit- in
-database-speak, this is called a *transaction*. A transaction makes sure that all reads and writes
-performed through it can be safely assumed to be happening at the exact same time and without interference.
-It is also made sure that all changes happen, or none do- you there is an error in your code, or the power
-goes out, either the transaction happened or it didn't- there is no in-between to break your database. 
+If you have more than one read or write to do, it is usually a good idea to group them all into a
+so-called "transaction", because:
 
-With LimDB, use a `with`-block on your database to perform all reads and writes in the block in a transaction.
-The block contains a special variable `t` containing the transaction. You can work on it using the same
-read- and write operations as you can with a database object.
+- Your data will not change between different reads, even if there are unrelated writes going on
+- All writes will be done if successful, none if there is an error
+
+This ensures consistency.
+
+Transactions in LimDB are done using a simple block structure.
 
 .. code-block:: nim
     import limdb
     let db = initDatabase[string, string]("myDirectory")
-    with db:
+    db.withTransaction as t:
       t["foo"] = "bar"
       echo t["foo"]
 
-If you don't put any read operations in your code, the transaction is reset under the hood, giving you extra
-assurances there aren't any accidental writes happening.
-
-If there is an error in your code that isn't caught within the `with`-block, the transaction is always reset.
+If there is an exception raised in your code, the writes in the block don't happen at all.
 
 .. code-block:: nim
     import limdb
@@ -78,9 +75,8 @@ If there is an error in your code that isn't caught within the `with`-block, the
       # t["foo"] = "bar" does not end up in the database
       echo t["fuz"] 
 
-If you need to make some writes you're might need to reset based
-on further conditions, you can raise an exception
-and catch it outside the block.
+You can use that on purpose if you're not sure if everything you are going to write will be valid,
+for example when interacting with a user through a form.
 
 .. code-block:: nim
     import limdb
@@ -98,7 +94,157 @@ and catch it outside the block.
       discard
       # t["foo"] was not set to "bar"
 
-You can also catch exceptions the standard library raises like this.
+
+Data Types
+##########
+
+By default, keys and values are strings, but you can use any Nim system data type except `ref`.
+Pass a tuple one or two data types.
+
+.. code-block:: nim
+    import limdb
+    let db = initDatabase("myDirectory", (int, float))
+
+    db[3] = 3.3
+
+This includes objects and named or unnamed tuples, as long as they don't contain a ref.
+
+.. code-block:: nim
+    type
+      Foo = object
+        a: int
+        b: float
+
+    let db = db.initDatabase("myDirectory", (Foo, (int, string, float)))
+    with db:
+      t[ Foo(a: 1, b: 2.2) ] = (5, "foo", 1.1)
+      t[ Foo(a: 3, b: 4.4) ] = (10, "bar", 2.2)
+
+.. caution::
+    It is recommended to hard-code the data types and the database name to make sure each database is only used with the data types
+    that were already written to it. Opening a database with the wrong types can lead to unpredictable behavior, and writing to a
+    database with the wrong types can lead to data loss.
+
+Named Databases
+###############
+
+If you need more than one database, you can put many in the same directory and refer to the by names.
+
+The default database, the one used in the examples above, also has a name, an empty string `""`, but
+it should only be used if it's the only one.
+
+Use a named tuple to provide names and types for the databases you want. You will get back a named
+tuple with the same keys containing your database objects.
+
+.. code-block:: nim
+
+    import limdb
+
+    let db = initDatabase("myDirectory", (foo: int, bar: float, string))
+
+    db.foo[1] = 15
+    db.bar[5.5] = "fuz"
+
+.. note::
+   If you already stored data in the default database, and now want to use named databases,
+   migrate your data to a named database before adding more because the default database
+   is used internally in this case.
+
+Multi-Database Transactions
+###########################
+
+If you need to make consistent reads and/or writes to several databases, you can give
+`withTransaction` a tuple containing database objects. It can be one you got from
+`initDatabase`, or you can make your own.
+
+If you give a variable to `as`, a tuple with transaction objects will be placed in it.
+
+If you give several variables, databases will be placed in those.
+
+.. code-block:: nim
+
+    import limdb
+
+    let db = initDatabase("myDirectory", (foo: int, bar: int, string, fuz: float))
+
+    db.withTransaction as t:
+      t.foo[1] = 12
+      t.bar[2] = "buz"
+      t.fuz[3.3] = 4.4
+
+    (db.foo, db.buz).withTransaction as foo, buz:
+      foo[0] = 12
+      buz[1][4.4] = 5.5
+
+    (a: db.bar, b: db.buz).withTransaction as t:
+      t.a[3] = "fizz"
+      t.b[6.6] = 8.8
+
+Ultra-Shorthand
+###############
+
+If you want to write faster at the expense of some readability, call `tx`
+on database objects or tuples with a code block containing read and write
+calls to a `tx` transaction object.
+
+.. code-block:: nim
+
+    import limdb
+
+    let db = initDatabase("myDirectory")
+
+    db.tx:
+      tx["foo"] = "bar"
+      tx["fuz"] = "buz"
+      echo tx["foo"]
+    
+    db.tx:
+      echo tx["bar"]
+
+.. note::
+    The LimDB author recommends using this for quick throwaway code and exploratory
+    programming, renaming to the more verbose `withTransaction` as programs
+    get longer and mature.
+
+Manually Selected Read/Write
+############################
+
+By default, LimDB looks into your `withTransaction` or `tx` block and checks if
+there are any write calls in there, chosing `readwrite` or `readonly` modes accordingly.
+
+If you want to make it clear a code block will not make any database changes, you can use
+an explicit `readonly` transaction.
+
+.. code-block:: nim
+
+    import limdb
+
+    let db = initDatabase("myDirectory")
+    db["foo"] = "bar"
+
+    db.withTransaction readonly as t:
+      echo t["foo"]
+      t["fuz"] = "buz"  # raises IOError
+    
+    db.tx ro:
+      echo tx["foo"]
+      tx["fuz"] = "buz"  # raises IOError
+
+If you really want a readwrite transaction that doesn't write for some reason, you can have it.
+
+.. code-block:: nim
+    import limdb
+
+    let db = initDatabase("myDirectory")
+    db["foo"] = "bar"
+    
+    # a bit slower but works fine
+
+    db.withTransaction readwrite as t:
+      echo t["foo"]  
+    
+    db.tx rw:
+      echo tx["foo"]
 
 Iterators
 #########
@@ -150,80 +296,6 @@ You can also use `mvalues` and `mpairs` to modify values on the go.
     # prints:
     # foo -> barz
     # fuz -> buzz
-
-Named Databases
-###############
-
-More than one database can be placed in the same storage location. No keys or values are shared
-between databases, so the key foo will remain empty in database B if it is set in database A.
-
-To access more than one database in the same Nim program, create an additional database from an existing
-one. The connection and storage location will be shared.
-
-The default database, the one used in the examples above, also has a name, an empty string `""`.
-
-.. code-block:: nim
-
-    import limdb
-    let db = initDatabase[string, string]("myDirectory")
-
-    let db2 = db.initDatabase[:string, string]("myName")
-
-    db["foo"] = "bar"
-    db2["foo"] = "another bar
-
-Database objects created from other database objects do not differ from ones created directly from a filename.
-
-Only one database may be initialized from the same storage location, additional ones can be created from it.
-
-.. note ::
-    Note the use of `[: ]` notation for the types when creating another database in the same directory
-    using method-call notation. You can call `initDatabase[string, string](db, "myName")` instead of
-    `db.initDatabase[:string, string]("myName")` if you prefer.
-
-.. caution::
-    If you use named databases, their names will appear as keys in the default database,
-    The one named empty string `""`.
-    In this case it is usually best not to use the default database for anything else,
-    and iterate over the default databases' keys to get a list of named databases.
-
-
-Data Types
-##########
-
-So far, we have only been using strings for keys and values. But you can use any system data type you like except references.
-
-You can create several databases in the same directory with different data types.
-
-.. code-block:: nim
-    import limdb
-    let db = initDatabase[int, float]("myDirectory", "aDatabaseWithNumbers")
-
-    db[3] = 3.3
-
-    type
-      Foo = object
-        a: int
-        b: float
-
-    let db2 = db.initDatabase[: array[2, int], Foo ]("aDatabaseWithArraysAndObjects")
-    with db:
-      t[ [1, 2] ] = Foo(a: 1, b: 2.2)
-      t[ [3, 4] ] = Foo(a: 3, b: 4.4)
-
-
-    let db3 = db.initDatabase[: (int, int), tuple[a: int, b: float] ]("aDatabaseWithTuples")
-
-    db3[ (1, 2) ] = (a: 1, b: 2.2)
-    db3[ (3, 4) ] = (a: 3, b: 4.4)
-
-.. note::
-    All supported data types are binary-copied in and out of the database, so their performance characteristics are the same. As usual with Nim, seq and string are copied once.
-
-.. caution::
-    It is recommended to hard-code the data types and the database name to make sure each database is only used with the data types
-    that were already written to it. Opening a database with the wrong types can lead to unpredictable behavior, and writing to a
-    database with the wrong types can lead to data loss.
 
 Custom data types
 #################
@@ -309,13 +381,16 @@ the `a` argument is larger, or `0` if they are equal.
 Manual transactions
 ###################
 
-If you want
+If you want more control, you can begin, commit and reset transactions manually.
 
-Grouped reads and writes use a process called database transactions under the hood. They are quite
-common and most databases support them. At the beginning of a grouped read and write, a transaction `t` is created. At the end of the block, it is reset if there are only read operations like `[]` in the block. If there is at least one write such as `[]=` or `del`, it is committed.
+If you call `initTransaction` and then `reset` it later, that's equivalent to calling
+a `withTransaction` block in `readonly` mode.
 
-If you would like to have more control, at the expense of having to be more careful, a transaction is started manually using `initTransaction`, and stopped with either `reset` or `commit`. Use `reset` if
-you only read data, or you want to throw away all writes. Use `commit` to actually perform all the writes.
+If you call `initTransaction` and then `commit` it later, that's equivalent to calling
+a `withTransaction` block in `readwrite` mode.
+
+Transactions are in `readwrite` mode by default, but can be set `readonly` for much
+better performance.
 
 .. code-block:: nim
 
@@ -326,21 +401,52 @@ you only read data, or you want to throw away all writes. Use `commit` to actual
     t["fuz"] = "buz"se
     t.commit()
     
-    let t = db.initTransaction
+    # readwrite can be set explicitly
+    let t = db.initTransaction readwrite
     t["foo"] = "another bar"
     t["fuz"] = "another buz"
     t.reset()  # foo and bar remain unchanged
 
-    let t = db.initTransaction
+    # readonly transaction
+    let t = db.initTransaction readonly
     echo t["foo"]
     echo t["bar"]
-    t.reset()  # read-only transactions are always reset
+    t.reset()  # Reset Read-only transactions when done 
 
 .. caution::
-    Make sure to reset transactions when exceptions are thrown. If you use
-    a database object directly without calling `initTransaction`,
-    LimDB handles this for you.
+    You need to reset or commit readwrite transactions immediately
+    after writing or all further ones will block forever.
 
+    Readonly transactions are more forgiving but still eventually
+    need to be reset to avoid resource leak.
+
+    It's usually safer and more convenient to use the `withTransaction`
+    syntax instead.
+
+Manually derived database
+#########################
+
+If you prefer, you can create a single named database and then
+derive another named database from it. This will have the same
+result as giving a named tuple it.
+
+.. code-block:: nim
+    let db = initDatabase("myDirectory", "someDbName")
+    let db2 = db.initDatabase("anotherDbName")
+
+You can still run transactions over these
+
+.. code-block:: nim
+    (db, db2).withTransaction t, t2:
+      t["foo"] = "bar"
+      t2["fuz"] = "buz"
+
+Or you can manually derive transactions for them as well.
+
+.. note::
+    It is usually recommended to hard-code database names and types
+    using `initDatabase`'s tuple syntax for most purposes, using these
+    mainly if you need to work programmatically.
 
 Improvement Areas Of Interest
 #############################
@@ -352,27 +458,7 @@ Improvement Areas Of Interest
 Migrating from 0.2
 ##################
 
-This version 0.3 breaks backwards compatibility with 0.2 in order to support the normal Nim generic syntax.
-
-You can `requires limdb=0.2` in your myProject.nimble file to keep the functionality you are used to, or make the following replacements to your code to upgrade:
-
-Replace
-
-    initDatabase("myDir")
-
-with
-    
-    initDatabase[string, string]("path")
-
-And
-
-    db.initDatabase("dbname")
-
-with
-    
-    db.initDatabase[:string, string]("dbname")
-
-If you would like to stay at 0.2, the `0.2 documentation <0.2/limdb.html>`_ is still available.
+0.2 code works unchanged.
 
 Why is it called LimDB?
 #######################
