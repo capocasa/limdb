@@ -67,11 +67,6 @@ proc open*[A, B](d: Database[A, B], name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*[A, B](d: Database, name = ""): Database[A, B] =
-  ## Open another database of a different name in an already-connected on-disk storage location.
-  result.env = d.env
-  result.dbi = result.open(name)
-
 proc compare(a, b: SomeNumber | SomeOrdinal): int =
   if a < b:
     -1
@@ -787,6 +782,11 @@ template commit*(t: Transactions) =
 template reset*(t: Transactions) =
   t[0].reset
 
+proc database*[A, B](d: Database, name = ""): Database[A, B] =
+  ## Open another database of a different name in an already-connected on-disk storage location.
+  result.env = d.env
+  result.dbi = result.open(name)
+
 proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
@@ -795,10 +795,19 @@ proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): D
   discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
 
-macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 10485760): auto =
+macro initDatabase*(location: string | Database | Databases, names: untyped = "", maxdbs = 254, size = 10485760): auto =
   case names.kind
   of nnkStrLit:
-    result = quote do: database[string, string](`filename`, `names`, `maxdbs.repr`, `size.repr`)
+    result = case location.getType.typeKind:
+    of ntyString:
+      quote do:
+        database[string, string](`location`, `names`, `maxdbs.repr`, `size.repr`)
+    of ntyTuple:
+      quote do:
+        database[string, string](`location`[0], `names`, `maxdbs.repr`, `size.repr`)
+    else:
+      quote do:
+        database[string, string](`location`, `names`)
   of nnkTupleConstr:
     var resultList:NimNode
     var resultTuple:NimNode
@@ -810,14 +819,21 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
 
       if resultList.isNil:
         resultList = newNimNode nnkStmtList
-        resultList.add quote do:
-          let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`filename.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
+        resultList.add case location.getType.typeKind:
+          of ntyString:
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
+          of ntyTuple:
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`[0], `name.repr`, `maxdbs.repr`, `size.repr`)
+          else:
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`)
         if name == "":
           resultList.add quote do:
             firstDatabase
         else:
           resultTuple = newNimNode nnkTupleConstr
-          resultList.add resultTuple
           var tupleElement = newNimNode nnkExprColonExpr
           tupleElement.add ident name
           tupleElement.add quote do:
@@ -830,24 +846,12 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
           var tupleElement = newNimNode nnkExprColonExpr
           tupleElement.add ident name
           tupleElement.add quote do:
-            firstDatabase.initDatabase[:`key.repr`, `val.repr`](`name.repr`)
+            database[`key.repr`, `val.repr`](firstDatabase, `name.repr`)
           resultTuple.add tupleElement
 
     for i, n in names:
       #echo "item ", n.repr
       case n.kind:
-        of nnkIdent:
-          if key.isNil:
-            name = ""
-            key = n
-            #echo "assign name '' key ", key.repr
-          else:
-            val = n
-            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
-            addItemToResultTuple(key, val, name)
-            name = ""
-            key = nil
-            val = nil
         of nnkExprColonExpr:
           if key.isNil:
             name = n[0].repr
@@ -863,10 +867,25 @@ macro initDatabase*(filename: string, names: untyped = "", maxdbs = 254, size = 
             key = n[1]
             val = nil
         else:
-          error("Database definition tuple `names` elements must be: dbname keyvaltype dbname:keyvaltype keytype,valtype dbname:keytype,valtype", n)
+          if key.isNil:
+            name = ""
+            key = n
+            #echo "assign name '' key ", key.repr
+          else:
+            val = n
+            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
+            addItemToResultTuple(key, val, name)
+            name = ""
+            key = nil
+            val = nil
     if not key.isNil:
       val = key
       addItemToResultTuple(key, val, name)
+    if not resultTuple.isnil:
+      if resultTuple.len > 1:
+        resultList.add resultTuple
+      else:
+        resultList.add resultTuple[0][1]
     result = newNimNode nnkBlockStmt
     result.add newNimNode nnkEmpty
     result.add resultList
