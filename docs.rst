@@ -99,7 +99,9 @@ Data Types
 ##########
 
 By default, keys and values are strings, but you can use any Nim system data type except `ref`.
-Pass a tuple one or two data types.
+
+Add a tuple for seperate types for the keys and values
+
 
 .. code-block:: nim
     import limdb
@@ -107,7 +109,15 @@ Pass a tuple one or two data types.
 
     db[3] = 3.3
 
-This includes objects and named or unnamed tuples, as long as they don't contain a ref.
+Or just a type if both are the same.
+
+   .. code-block:: nim
+    import limdb
+    let db = initDatabase("myDirectory", int)
+
+    db[3] = 3
+
+Objects and named or unnamed tuples work fine as long as they don't contain a ref.
 
 .. code-block:: nim
     type
@@ -120,10 +130,14 @@ This includes objects and named or unnamed tuples, as long as they don't contain
       t[ Foo(a: 1, b: 2.2) ] = (5, "foo", 1.1)
       t[ Foo(a: 3, b: 4.4) ] = (10, "bar", 2.2)
 
+It's also possible to serialize objects to string and store them like that, if you prefer.
+
+See *Custom Data Types* below if you want to natively add your own.
+
 .. caution::
-    It is recommended to hard-code the data types and the database name to make sure each database is only used with the data types
-    that were already written to it. Opening a database with the wrong types can lead to unpredictable behavior, and writing to a
-    database with the wrong types can lead to data loss.
+    It is recommended to hard-code the data types and the database if possible, making sure
+    each database is only used with the data types that were already written to it. Confusing
+    them can lead to garbage output or data loss.
 
 Named Databases
 ###############
@@ -157,9 +171,9 @@ If you need to make consistent reads and/or writes to several databases, you can
 `withTransaction` a tuple containing database objects. It can be one you got from
 `initDatabase`, or you can make your own.
 
-If you give a variable to `as`, a tuple with transaction objects will be placed in it.
-
-If you give several variables, databases will be placed in those.
+A tuple containing a transaction object for each database will be placed into the transaction
+variable that you can use in the block to make changes, just like with the single database
+transaction above.
 
 .. code-block:: nim
 
@@ -167,25 +181,24 @@ If you give several variables, databases will be placed in those.
 
     let db = initDatabase("myDirectory", (foo: int, bar: int, string, fuz: float))
 
-    db.withTransaction as t:
+    db.withTransaction t:
       t.foo[1] = 12
       t.bar[2] = "buz"
       t.fuz[3.3] = 4.4
 
-    (db.foo, db.buz).withTransaction as foo, buz:
-      foo[0] = 12
-      buz[1][4.4] = 5.5
+    (db.foo, db.fuz).withTransaction t:
+      t[0][2] = 3
+      t[1][4.4] = 5.5
 
-    (a: db.bar, b: db.buz).withTransaction as t:
+    (a: db.bar, b: db.buz).withTransaction t:
       t.a[3] = "fizz"
       t.b[6.6] = 8.8
 
 Ultra-Shorthand
 ###############
 
-If you want to write faster at the expense of some readability, call `tx`
-on database objects or tuples with a code block containing read and write
-calls to a `tx` transaction object.
+If you want to use a quick shorthand at the expense of some code readability, call `tx`
+instead of `withTransaction t`. Your transaction or transactions will be placed into a `tx` variable.
 
 .. code-block:: nim
 
@@ -206,8 +219,8 @@ calls to a `tx` transaction object.
     programming, renaming to the more verbose `withTransaction` as programs
     get longer and mature.
 
-Manually Selected Read/Write
-############################
+Explicit Read/Write
+###################
 
 By default, LimDB looks into your `withTransaction` or `tx` block and checks if
 there are any write calls in there, chosing `readwrite` or `readonly` modes accordingly.
@@ -296,6 +309,39 @@ You can also use `mvalues` and `mpairs` to modify values on the go.
     # prints:
     # foo -> barz
     # fuz -> buzz
+
+Derived database
+#########################
+
+For many use cases, using only one centralized call to initDatabase in the whole
+program gives a nice, readable and safe way setting up your read and write needs and may
+be all you need.
+
+Sometimes you might still prefer or need to open databases as you go along.
+
+You can get more database objects (or tuples of several) from existing ones by calling
+initDatabase again, passing an existing database instead of a directory on disk.
+
+.. code-block:: nim
+    let db = initDatabase("myDirectory", "someDbName")
+    let db2 = db.initDatabase("anotherDbName")
+
+    # You can derive several at once.
+
+    let moreDbs = db.initDatabase (yadn: int, yyadn, float)
+    moreDbs.yadn[1] = 10
+      t2["fuz"] = "buz"
+    
+    # You can still run multi-database-transactions over combinations of these
+
+    (db, moreDbs.yadn1).withTransaction t:
+      t[0]["foo"] = "bar"
+      t[0][5] = 10
+
+.. caution::
+    It's harder to make sure you open each named database with the right types
+    when deriving databases, especially programmatically or at run-time. This
+    can cause garbage output or data corruption- use with care.
 
 Custom data types
 #################
@@ -423,35 +469,11 @@ better performance.
     It's usually safer and more convenient to use the `withTransaction`
     syntax instead.
 
-Manually derived database
-#########################
-
-If you prefer, you can create a single named database and then
-derive another named database from it. This will have the same
-result as giving a named tuple it.
-
-.. code-block:: nim
-    let db = initDatabase("myDirectory", "someDbName")
-    let db2 = db.initDatabase("anotherDbName")
-
-You can still run transactions over these
-
-.. code-block:: nim
-    (db, db2).withTransaction t, t2:
-      t["foo"] = "bar"
-      t2["fuz"] = "buz"
-
-Or you can manually derive transactions for them as well.
-
-.. note::
-    It is usually recommended to hard-code database names and types
-    using `initDatabase`'s tuple syntax for most purposes, using these
-    mainly if you need to work programmatically.
-
 Improvement Areas Of Interest
 #############################
 
-* Use Nim views to provide an alternative interface allowing safe zero-copy data access in with Nim data types (lmdb itself does not copy data when accessing)
+* Allow auto-unpacking of multi-database transaction variables, e.g. (db1, db2).withTransaction t1, t2 readonly
+* Use Nim views to provide an alternative interface allowing safe zero-copy data access in with Nim data types (lmdb itself does not copy data when accessing) - this might be already the case
 * Useful iterators: `keysFrom`, `keysBetween`, other common usage of lmdb cursors
 * Map lmdb multipe values per key feature to something Nimish, perhaps iterators or seqs
 
