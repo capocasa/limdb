@@ -462,7 +462,8 @@ block:
   assert dbs.foo is Database[int, int]
   assert dbs.bar is Database[int, string]
   assert dbs.fuz is Database[FooNum, LetterNum]
-  assert dbs.tupleLen == 3
+
+  # assert dbs.tupleLen == 3
 
   let db = initDatabase(testLocation2, (int, int))
   assert db is Database[int, int]

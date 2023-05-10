@@ -10,7 +10,10 @@
 
 import std/[os, macros], lmdb
 
-when NimMajor >= 1 and NimMinor >= 4:
+const minNim14 = NimMajor > 1 or (NimMajor == 1 and NimMinor >= 4)
+const maxNim10 = NimMajor < 1 or NimMajor == 1 and NimMinor == 0
+
+when minNim14:
   import std/effecttraits
 
 export lmdb
@@ -90,7 +93,7 @@ proc compare[T: object | tuple](a, b: T): int =
   0
 
 proc wrapCompare(T: typedesc): auto =
-  proc (a, b: ptr Blob): cint {.cdecl.} =
+  result = proc (a, b: ptr Blob): cint {.cdecl.} =
     compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
 proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
@@ -632,11 +635,13 @@ proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
 
-macro callsTaggedAs(p:proc, tag: string):untyped =
-  for t in getTagsList(p):
-    if t.eqIdent(tag):
-      return newLit(true)
-  newLit(false)
+
+when minNim14:
+  macro callsTaggedAs(p:proc, tag: string):untyped =
+    for t in getTagsList(p):
+      if t.eqIdent(tag):
+        return newLit(true)
+    newLit(false)
 
 template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
   ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
@@ -650,16 +655,20 @@ template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
       error("Parameter writeMode must be of type WriteMode")
   block:
     const writes = static:
-      proc bodyproc() {.compileTime.} =
-        # dump body into a procedure, the better to check
-        # it for effects using the small macro above at compiletime
-        let t = d.initTransaction
-        body
+      when minNim14:
+        proc bodyproc() {.compileTime.} =
+          # dump body into a procedure, the better to check
+          # it for effects using the small macro above at compiletime
+          let t = d.initTransaction
+          body
 
-      # prevent manual reset/commit, auto-determine readonly status
-      when callsTaggedAs(bodyproc, "Concludes"):
-        error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
-      callsTaggedAs(bodyproc, "Writes")
+        # prevent manual reset/commit, auto-determine readonly status
+        when callsTaggedAs(bodyproc, "Concludes"):
+          error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+        callsTaggedAs(bodyproc, "Writes")
+      else:
+        hint("Automatic transaction mode requires Nim 1.4 or greater, defaulting to readwrite. Specify readwrite to disable warning.")
+        true
 
     const txMode = static:
       case writeMode:
@@ -669,8 +678,9 @@ template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
         else:
           readonly
       of ro, readonly:
-        when writes:
-          error("Cannot write to transaction block marked readonly")
+        when minNim14:
+          when writes:
+            error("Cannot write to transaction block marked readonly")
         readonly
       of rw, readwrite:
         when not writes:
@@ -705,6 +715,10 @@ template tx3(d, writeMode, body: untyped) =
 
 template tx2(d, body: untyped) =
   transaction d, tx, au, body
+
+when maxNim10:
+  macro varargsLen(args: varargs[untyped]): int =
+    return newIntLitNode args.len
 
 template tx*(args: varargs[untyped]) =
   ## Ultra-shorthand transaction
@@ -819,7 +833,7 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
     else:
       quote do:
         database[`T`, `T`](`location`, `name`)
-  of nnkTupleConstr:
+  of nnkTupleConstr, nnkPar:
     var resultList:NimNode
     var resultTuple:NimNode
     var name = ""
@@ -827,7 +841,6 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
     var val:NimNode
 
     template addItemToResultTuple(key, val, name: untyped) =
-
       if resultList.isNil:
         resultList = newNimNode nnkStmtList
         resultList.add case location.getType.typeKind:
@@ -835,8 +848,11 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
             quote do:
               let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
           of ntyTuple:
+            var l = newNimNode nnkBracketExpr  # 1.4 support
+            l.add location
+            l.add newIntLitNode 0
             quote do:
-              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`[0], `name.repr`)
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`l.repr`, `name.repr`)
           else:
             quote do:
               let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`)
