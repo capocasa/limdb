@@ -68,7 +68,7 @@ If there is an exception raised in your code, the writes in the block don't happ
 .. code-block:: nim
     import limdb
     let db = initDatabase[string, string]("myDirectory")
-    with db:
+    db.withTransaction:
       t["foo"] = "bar"
    
       # triggers a KeyError, program exits and
@@ -86,7 +86,7 @@ for example when interacting with a user through a form.
 
     let db = initDatabase[string, string]("myDirectory")
     try:
-      with db:
+      db.withTransaction:
         t["foo"] = "bar"
         if not valid():
           raise newException(ValueError)
@@ -126,7 +126,7 @@ Objects and named or unnamed tuples work fine as long as they don't contain a re
         b: float
 
     let db = db.initDatabase("myDirectory", (Foo, (int, string, float)))
-    with db:
+    db.withTransaction:
       t[ Foo(a: 1, b: 2.2) ] = (5, "foo", 1.1)
       t[ Foo(a: 3, b: 4.4) ] = (10, "bar", 2.2)
 
@@ -259,6 +259,11 @@ If you really want a readwrite transaction that doesn't write for some reason, y
     db.tx rw:
       echo tx["foo"]
 
+.. note::
+    Automatically selecting transactions require Nim 1.4 or greater. On Nim 1.2 or lower,
+    transaction blocks write by default, so if you are sticking to an older Nim version,
+    use explicit readonly blocks to get a performance benefit.
+
 Iterators
 #########
 
@@ -270,7 +275,7 @@ You can also use `mvalues` and `mpairs` to modify values on the go.
 
     import limdb
     let db = initDatabase[string, string]("myDirectory")
-    with db:
+    db.withTransaction:
       t["foo"] = "bar"
       t["fuz"] = "buz"
 
@@ -280,7 +285,7 @@ You can also use `mvalues` and `mpairs` to modify values on the go.
     # foo
     # fuz
 
-    with db:
+    db.withTransaction:
       for value in t.values:
         echo value
     # prints:
@@ -298,7 +303,7 @@ You can also use `mvalues` and `mpairs` to modify values on the go.
       if value == "fuz":
         value = "buzz"
 
-    with db:
+    db.withTransaction:
       for key, value in t.mpairs:
         if key == "foo":
           value = "barz"
@@ -473,7 +478,7 @@ Improvement Areas Of Interest
 #############################
 
 * Allow auto-unpacking of multi-database transaction variables, e.g. (db1, db2).withTransaction t1, t2 readonly
-* Use Nim views to provide an alternative interface allowing safe zero-copy data access in with Nim data types (lmdb itself does not copy data when accessing) - this might be already the case
+* Document how many copies are made when accessing and writing- there aren't many, and no more than in LMDB code in C
 * Useful iterators: `keysFrom`, `keysBetween`, other common usage of lmdb cursors
 * Map lmdb multipe values per key feature to something Nimish, perhaps iterators or seqs
 
