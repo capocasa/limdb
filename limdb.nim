@@ -8,17 +8,23 @@
 # could do it on the client but it will just be such a pleasant surprise when
 # someone finds a half-finished comment already there when loading on another device
 
-import std/os, lmdb
+import std/[os, macros], lmdb
+
+const minNim14 = NimMajor > 1 or (NimMajor == 1 and NimMinor >= 4)
+const maxNim10 = NimMajor < 1 or NimMajor == 1 and NimMinor == 0
+
+when minNim14:
+  import std/effecttraits
 
 export lmdb
 
 type
-  Database* = object
+  Database*[A, B] = object
     ## A key-value database in a memory-mapped on-disk storage location.
     env*: LMDBEnv
     dbi*: Dbi
 
-  Transaction* = object
+  Transaction*[A, B] = object
     ## A transaction may be created and reads or writes performed on it instead of directly
     ## on a database object. That way, reads or writes are not affected by other writes happening
     ## at the same time, and changes happen all at once at the end or not at all.
@@ -30,26 +36,67 @@ type
     ## is LMDB's native storage type- a block of memory. `string` types are converted automatically,
     ## and conversion for other data types can be added by adding `fromBlob` and `toBlob` for a type.
 
-proc open*(db: Database, name: string): Dbi =
+  Writes* = object
+    ## A tag to track write transactions
+  Concludes* = object
+    ## A tag to track commits and rollbacks
+
+  WriteMode* = enum
+    autoselect, readwrite, readonly, au, rw, ro
+
+  Databases* = concept dbs
+    ## A type to represent a named or unnamed tuple containing
+    ## several Database objects with same or different sub-types.
+    ##
+    ## This is typically used to represent different databases
+    ## stored in the same directory
+    dbs is tuple
+    for db in dbs.fields:
+      db is Database
+
+  Transactions* = concept ts
+    ## A type to represent a named or unnamed tuple containing 
+    ## several Transaction objects with the same or different sub-types.
+    ##
+    ## This is typically used to represent transaction objects for different
+    ## databases of the same open transaction.
+    ts is tuple
+    for t in ts.fields:
+      t is Transaction
+
+proc open*[A, B](d: Database[A, B], name: string): Dbi =
   # Open a database and return a low-level handle
-  let dummy = db.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
+  let dummy = d.env.newTxn()  # lmdb quirk, need an initial txn to open dbi that can be kept
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc initDatabase*(filename = "", name = "", maxdbs = 255, size = 10485760): Database =
-  ## Connect to an on-disk storage location and open a database. If the path does not exist,
-  ## a directory will be created.
-  createDir(filename)
-  result.env = newLMDBEnv(filename, maxdbs)
-  discard envSetMapsize(result.env, uint(size))
-  result.dbi = result.open(name)
+proc compare(a, b: SomeNumber | SomeOrdinal): int =
+  if a < b:
+    -1
+  elif a > b:
+    1
+  else:
+    0
 
-proc initDatabase*(db: Database, name = ""): Database =
-  ## Open another database of a different name in an already-connected on-disk storage location.
-  result.env = db.env
-  result.dbi = result.open(name)
+proc compare[N, T](a, b: array[N, T]): int =
+  for i in 0..<a.len:
+    let r = compare(a[i], b[i])
+    if r != 0:
+      return r
+  0
 
-proc initTransaction*(db: Database): Transaction =
+proc compare[T: object | tuple](a, b: T): int =
+  for u, v in fields(a, b):
+    let r = compare(u, v)
+    if r != 0:
+      return r
+  0
+
+proc wrapCompare(T: typedesc): auto =
+  result = proc (a, b: ptr Blob): cint {.cdecl.} =
+    compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
+
+proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
   ## Start a transaction from a database.
   ##
   ## Reads and writes on the transaction will reflect the same
@@ -62,8 +109,28 @@ proc initTransaction*(db: Database): Transaction =
   ## .. caution::
   ##     Calling neither `reset` nor `commit` on a transaction can block database access.
   ##     This commonly happens when an exception is raised.
-  result.dbi = db.dbi
-  result.txn = db.env.newTxn()
+  result.dbi = d.dbi
+  let flags = case writeMode:
+    of rw, readwrite:
+      0
+    of ro, readonly:
+      RDONLY
+    else:
+      raise newException(IOError, "only withTransaction and other block transactions can autoselect write mode")
+  let err = txnBegin(d.env, nil, flags.cuint, addr(result.txn))
+  if err != 0:
+    raise newException(IOError, "LimDB initTransaction failed: " & $strerror(err))
+  when A isnot string:
+    if 0 != setCompare(result.txn, result.dbi, cast[ptr CmpFunc](wrapCompare(A))):
+      raise newException(CatchableError, "LimDB could not set compare proc for type" & $A)
+
+template initTransaction*[A, B](d: Database[A, B], t: Transaction): Transaction[A, B] =
+  ## Expand an open transaction to include another database.
+  ##
+  ## This is used to make changes to more than one database within the same transaction.
+  ##
+  ## Note that the databases need to have been derived from only one database on the same directory.
+  Transaction[A, B](dbi: d.dbi, txn: t.txn)
 
 proc toBlob*(s: string): Blob =
   ## Convert a string to a chunk of data, key or value, for LMDB
@@ -73,54 +140,68 @@ proc toBlob*(s: string): Blob =
   result.mvSize = s.len.uint
   result.mvData = s.cstring
 
-proc fromBlob*(b: Blob): string =
+template toBlob*(x: SomeNumber | SomeOrdinal | array | tuple | object): Blob =
+  ## Convert standard Nim data types to a chunk of data, key or value, for LMDB
+  Blob(mvSize: sizeof(x).uint, mvData: cast[pointer](x.unsafeAddr))
+
+template toBlob*[T](s: seq[T]): Blob =
+  Blob(mvSize: uint(sizeof(T) * s.len), mvData: cast[pointer](s[0].unsafeAddr))
+
+proc fromBlob*(b: Blob, T: typedesc[string]): string =
   ## Convert a chunk of data, key or value, to a string
   ##
   ## .. note::
   ##     If you want other data types than a string, implement this for the data type
-  result = newStringOfCap(b.mvSize)
   result.setLen(b.mvSize)
   copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
 
-proc `[]`*(t: Transaction, key: string): string =
+proc fromBlob*(b: Blob, T: typedesc[SomeNumber | SomeOrdinal | array | tuple | object]): T =
+  ## Convert a chunk of data, key or value, to a string
+  cast[ptr T](b.mvData)[]
+
+proc fromBlob*[U](b: Blob, T: typedesc[seq[U]]): seq[U] =
+  ## Convert a chunk of data, key or value, to a seq
+  result.setLen(b.mvSize.int div sizeof U)
+  copyMem(result[0].addr, b.mvData, b.mvSize)
+
+proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   # Read a value from a key in a transaction
   var k = key.toBlob
   var d: Blob
   let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
-  if err == 0:
-    result = d.fromBlob
-  elif err == lmdb.NOTFOUND:
+  if err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
-  else:
-    raise newException(Exception, $strerror(err))
+  elif err != 0:
+    raise newException(IOError, $strerror(err))
+  fromBlob(d, B)
 
-proc `[]=`*(t: Transaction, key, value: string) =
-  # Write a value to a key in a transaction
+proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
+  # Writes a value to a key in a transaction
   var k = key.toBlob
-  var v = value.toBlob
+  var v = val.toBlob
   let err = lmdb.put(t.txn, t.dbi, addr(k), addr(v), 0)
   if err == 0:
     return
   elif err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   else:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
-proc del*(t: Transaction, key, value: string) =
+proc del*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   ## Delete a key-value pair
   # weird lmdb quirk, you delete with both key and value because you can "shadow"
   # a key's value with another put
   var k = key.toBlob
-  var v = value.toBlob
+  var v = val.toBlob
   let err = lmdb.del(t.txn, t.dbi, addr(k), addr(v))
   if err == 0:
     return
   elif err == lmdb.NOTFOUND:
     raise newException(KeyError, $strerror(err))
   else:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
-template del*(t: Transaction, key: string) =
+template del*[A, B](t: Transaction[A, B], key: A) =
   ## Delete a value in a transaction
   ##
   ## .. note::
@@ -128,21 +209,21 @@ template del*(t: Transaction, key: string) =
   ##     the value for you, giving you the more familiar interface.
   t.del(key, t[key])
 
-proc hasKey*(t: Transaction, key: string): bool =
+proc hasKey*[A, B](t: Transaction[A, B], key: A): bool =
   ## See if a key exists without fetching any data
   var key = key.toBlob
   var dummyData:Blob
   return 0 == get(t.txn, t.dbi, addr(key), addr(dummyData))
 
-template contains*(t: Transaction, key: string): bool =
+proc contains*[A, B](t: Transaction[A, B], key: A): bool =
   ## Alias for hasKey to support `in` syntax
   hasKey(t, key)
 
-template commit*(t: Transaction) =
+proc commit*[A, B](t: Transaction[A, B]) {.tags: [Concludes].} =
   ## Commit a transaction. This writes all changes made in the transaction to disk.
   t.txn.commit()
 
-template reset*(t: Transaction) =
+proc reset*[A, B](t: Transaction[A, B]) {.tags: [Concludes].} =
   ## Reset a transaction. This throws away all changes made in the transaction.
   ## After only reading in a transaction, reset it as well.
   ##
@@ -152,44 +233,44 @@ template reset*(t: Transaction) =
   ##     not `mdb_reset`- the latter does something else not covered by LimDB.
   t.txn.abort()
 
-proc `[]`*(db: Database, key: string): string =
+proc `[]`*[A, B](d: Database[A, B], key: A): B =
   ## Fetch a value in the database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readonly
   try:
     result = t[key]
   finally:
     t.reset()
 
-proc `[]=`*(d: Database, key, value: string) =
+proc `[]=`*[A, B](d: Database[A, B], key: A, val: B) =
   ## Set a value in the database
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
-    t[key] = value
-  except:
+    t[key] = val
+  except CatchableError:
     t.reset()
     raise
   t.commit()
 
-proc del*(db: Database, key, value: string) =
+proc del*[A, B](d: Database[A, B], key: A, val: B) =
   ## Delete a key-value pair in the database
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readwrite
   try:
-    t.del(key, value)
-  except:
+    t.del(key, val)
+  except CatchableError:
     t.reset()
     raise
   t.commit()
 
-proc del*(db: Database, key: string) =
+proc del*[A, B](d: Database[A, B], key: A) =
   ## Deletes a value in the database
   ##
   ## .. note::
@@ -198,25 +279,25 @@ proc del*(db: Database, key: string) =
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
-  let t = db.initTransaction
+  let t = d.initTransaction readwrite
   try:
     t.del(key)
-  except:
+  except CatchableError:
     t.reset()
     raise
   t.commit()
 
-proc hasKey*(db: Database, key: string):bool =
+proc hasKey*[A, B](d: Database[A, B], key: A):bool =
   ## See if a key exists without fetching any data in a transaction
-  let t = db.initTransaction
+  let t = d.initTransaction readonly
   result = t.hasKey(key)
   t.reset()
 
-template contains*(db: Database, key:string):bool =
+template contains*[A, B](d: Database[A, B], key: A):bool =
   ## Alias for hasKey to support `in` syntax in transactions
-  hasKey(db, key)
+  hasKey(d, key)
 
-iterator keys*(t: Transaction): string =
+iterator keys*[A, B](t: Transaction[A, B]): A =
   ## Iterate over all keys in a database with a transaction
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
@@ -224,19 +305,19 @@ iterator keys*(t: Transaction): string =
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
-      yield fromBlob(key)
+      yield fromBlob(key, A)
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
-          yield key.fromBlob
+          yield fromBlob(key, A)
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
-iterator values*(t: Transaction): string =
+iterator values*[A, B](t: Transaction[A, B]): B =
   ## Iterate over all values in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
@@ -244,19 +325,19 @@ iterator values*(t: Transaction): string =
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
-      yield fromBlob(data)
+      yield fromBlob(data, B)
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
-          yield fromBlob(data)
+          yield fromBlob(data, B)
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
-iterator mvalues*(t: Transaction): var string =
+iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
   ## Iterate over all values in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -267,29 +348,29 @@ iterator mvalues*(t: Transaction): var string =
     if err == 0:
       var d: ref string
       new(d)
-      d[] = fromBlob(data)
+      d[] = fromBlob(data, B)
       yield d[]
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-        raise newException(Exception, $strerror(err))
+        raise newException(IOError, $strerror(err))
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           var d:ref string
           new(d)
-          d[] = fromBlob(data)
+          d[] = fromBlob(data, B)
           yield d[]
           var mdata = d[].toBlob
           if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-            raise newException(Exception, $strerror(err))
+            raise newException(IOError, $strerror(err))
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
-iterator pairs*(t: Transaction): (string, string) =
+iterator pairs*[A, B](t: Transaction[A, B]): (A, B) =
   ## Iterate over all key-value pairs in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
@@ -297,19 +378,19 @@ iterator pairs*(t: Transaction): (string, string) =
   try:
     let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
     if err == 0:
-      yield (fromBlob(key), fromBlob(data))
+      yield (fromBlob(key, A), fromBlob(data, B))
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
-          yield (fromBlob(key), fromBlob(data))
+          yield (fromBlob(key, A), fromBlob(data, B))
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
-iterator mpairs*(t: Transaction): (string, var string) =
+iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
@@ -318,113 +399,113 @@ iterator mpairs*(t: Transaction): (string, var string) =
   let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
-      var d: ref string
+      var d: ref B
       new(d)
-      d[] = data.fromBlob
-      yield (key.fromBlob, d[])
+      d[] = fromBlob(data, B)
+      yield (fromBlob(key, A), d[])
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-        raise newException(Exception, $strerror(err))
+        raise newException(IOError, $strerror(err))
       while true:
         let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
-          var d:ref string
+          var d:ref B
           new(d)
-          d[] = data.fromBlob
-          yield (key.fromBlob, d[])
+          d[] = fromBlob(data, B)
+          yield (fromBlob(key, A), d[])
           var mdata = d[].toBlob
           if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
-            raise newException(Exception, $strerror(err))
+            raise newException(IOError, $strerror(err))
         elif err == lmdb.NOTFOUND:
           break
         else:
-          raise newException(Exception, $strerror(err))
+          raise newException(IOError, $strerror(err))
   finally:
     cursor.cursorClose
 
-template len*(t: Transaction): int =
+template len*[A, B](t: Transaction[A, B]): int =
   ## Returns the number of key-value pairs in the database.
   stat(t.txn, t.dbi).msEntries.int
 
-iterator keys*(db: Database): string =
-  ## Iterate over all keys pairs in a database.
+iterator keys*[A, B](d: Database[A, B]): A =
+  ## Iterate over all keys in a database.
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction
   try:
     for key in t.keys:
       yield key
   finally:
     t.reset()
 
-iterator values*(db: Database): string =
+iterator values*[A, B](d: Database[A, B]): B =
   ## Iterate over all values in a database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readonly
   try:
     for value in t.values:
       yield value
   finally:
     t.reset()
 
-iterator pairs*(db: Database): (string, string) =
+iterator pairs*[A, B](d: Database[A, B]): (A, B) =
   ## Iterate over all values in a database
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readonly
   try:
     for pair in t.pairs:
       yield pair
   finally:
     t.reset()
 
-iterator mvalues*(db: Database): var string =
+iterator mvalues*[A, B](d: Database[A, B]): var B =
   ## Iterate over all values in a database allowing modification
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readwrite
   try:
     for value in t.mvalues:
       yield value
   finally:
     t.commit()
 
-iterator mpairs*(db: Database): (string, var string) =
+iterator mpairs*[A, B](d: Database[A, B]): (A, var B) =
   ## Iterate over all key-value pairs in a database allowing the values
   ## to be modified
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readwrite
   try:
     for k, v in t.mpairs:
       yield (k, v)
   finally:
     t.commit()
 
-proc len*(db: Database): int =
+proc len*[A, B](d: Database[A, B]): int =
   ## Returns the number of key-value pairs in the database.
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readonly
   result = t.len
   t.reset()
 
-proc copy*(db: Database, filename: string) =
+proc copy*[A, B](d: Database[A, B], filename: string) =
   ## Copy a database to a different directory. This also performs routine database
   ## maintenance so the resulting file with usually be smaller. This is best performed
   ## when no one is writing to the database directory.
-  let err = envCopy(db.env, filename.cstring)
+  let err = envCopy(d.env, filename.cstring)
   if err != 0:
-    raise newException(Exception, $strerror(err))
+    raise newException(IOError, $strerror(err))
 
-template clear*(t: Transaction) =
+template clear*[A, B](t: Transaction[A, B]) =
   ## Remove all key-values pairs from the database, emptying it.
   ##
   ## .. note::
@@ -432,24 +513,22 @@ template clear*(t: Transaction) =
   ##     more data than was in there before is added. It will shrink if it is copied.
   emptyDb(t.txn, t.dbi)
 
-proc clear*(db: Database) =
+proc clear*[A, B](d: Database[A, B]) =
   ## Remove all key-values pairs from the database, emptying it.
   ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
-  let t = db.initTransaction
+  let t = d.initTransaction readwrite
   t.clear
   t.commit
 
-template close*(db: Database) =
+template close*[A, B](d: Database[A, B]) =
   ## Close the database directory. This will free up some memory and make all databases
   ## that were created from the same directory unavailable. This is not necessary for many use cases.
   ##
-  ## .. note::
-  ##     This creates and commits a transaction under the hood
-  envClose(db.env)
+  envClose(d.env)
 
-proc getOrDefault*(t: Transaction, key: string):string =
+proc getOrDefault*[A, B](t: Transaction[A, B], key: A):B=
   ## Read a value from a key in a transaction and return the provided default value if
   ## it does not exist
   try:
@@ -457,9 +536,9 @@ proc getOrDefault*(t: Transaction, key: string):string =
   except KeyError:
     result = ""
 
-proc getOrDefault*(d: Database, key: string):string =
+proc getOrDefault*[A, B](d: Database[A, B], key: A):B =
   ## Fetch a value in the database and return the provided default value if it does not exist
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   try:
     result = t[key]
   except KeyError:
@@ -467,15 +546,15 @@ proc getOrDefault*(d: Database, key: string):string =
   finally:
     t.reset()
 
-proc hasKeyOrPut*(t: Transaction, key, val: string): bool =
+proc hasKeyOrPut*[A, B](t: Transaction[A, B], key: A, val: B): bool =
   ## Returns true if `key` is in the transaction view of the database, otherwise inserts `value`.
   result = key in t
   if not result:
     t[key] = val
 
-proc hasKeyOrPut*(d: Database, key, val: string): bool =
+proc hasKeyOrPut*[A, B](d: Database[A, B], key: A, val: B): bool =
   ## Returns true if `key` is in the Database, otherwise inserts `value`.
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     result = key in t
     if result:
@@ -483,21 +562,21 @@ proc hasKeyOrPut*(d: Database, key, val: string): bool =
     else:
       t[key] = val
       t.commit
-  except:
+  except CatchableError:
     t.reset
     raise
 
-proc getOrPut*(t: Transaction, key, val: string): string =
-  ## Retrieves value at key as mutable copy or enters and returns val if not present
+proc getOrPut*[A, B](t: Transaction[A, B], key: A, val: B): B =
+  ## Retrieves value at key or enters and returns val if not present
   try:
     result = t[key]
   except KeyError:
     result = val
     t[key] = val
 
-proc getOrPut*(d: Database, key, val: string): string =
+proc getOrPut*[A, B](d: Database[A, B], key: A, val: B): B =
   ## Retrieves value of key as mutable copy or enters and returns val if not present
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     result = t[key]
     t.reset()
@@ -506,7 +585,7 @@ proc getOrPut*(d: Database, key, val: string): string =
     t[key] = val
     t.commit()
 
-proc pop*(t: Transaction, key: string, val: var string): bool =
+proc pop*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
   ## Delete value in database within transaction. If it existed, return
   ## true and place into `val`
   try:
@@ -515,25 +594,31 @@ proc pop*(t: Transaction, key: string, val: var string): bool =
     true
   except KeyError:
     false
+  except CatchableError:
+    t.reset
+    raise
 
-proc pop*(d: Database, key: string, val: var string): bool =
+proc pop*[A, B](d: Database[A, B], key: A, val: var B): bool =
   ## Delete value in database. If it existed, return
   ## true and place value into `val`
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     val = t[key]
     t.del(key)
     t.commit
     true
-  except:
+  except KeyError:
     t.reset
     false
+  except CatchableError:
+    t.reset
+    raise
 
-proc take*(t: Transaction, key: string, val: var string): bool =
+proc take*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
   ## Alias for pop
   pop(t, key, val)
 
-proc take*(d: Database, key: string, val: var string): bool =
+proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
   ## Alias for pop
   pop(d, key, val)
 
@@ -549,4 +634,289 @@ proc take*(d: Database, key: string, val: var string): bool =
 # merge                specialized, only for counttable.
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
+
+
+when minNim14:
+  macro callsTaggedAs(p:proc, tag: string):untyped =
+    for t in getTagsList(p):
+      if t.eqIdent(tag):
+        return newLit(true)
+    newLit(false)
+
+template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
+  ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
+  ##
+  ## .. note::
+  ##     Available using Nim 1.4 and above
+  static:
+    when writeMode isnot WriteMode:
+      # Cannot use WriteMode type for param because untyped param positions must 
+      # match for overloaded templates. So at least check the type manually
+      error("Parameter writeMode must be of type WriteMode")
+  block:
+    const writes = static:
+      when minNim14:
+        proc bodyproc() {.compileTime.} =
+          # dump body into a procedure, the better to check
+          # it for effects using the small macro above at compiletime
+          let t = d.initTransaction
+          body
+
+        # prevent manual reset/commit, auto-determine readonly status
+        when callsTaggedAs(bodyproc, "Concludes"):
+          error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+        callsTaggedAs(bodyproc, "Writes")
+      else:
+        hint("Automatic transaction mode requires Nim 1.4 or greater, defaulting to readwrite. Specify readwrite to disable warning.")
+        true
+
+    const txMode = static:
+      case writeMode:
+      of au, autoselect:
+        if writes:
+          readwrite
+        else:
+          readonly
+      of ro, readonly:
+        when minNim14:
+          when writes:
+            error("Cannot write to transaction block marked readonly")
+        readonly
+      of rw, readwrite:
+        when not writes:
+          hint("Transaction block marked readwrite but not written to. Consider marking it read-only or leaving at autoselect transaction")
+        readwrite
+    let t {.inject.} = d.initTransaction(txMode)
+    try:
+      body
+      when writes or writeMode == readwrite:
+        t.commit
+      else:
+        t.reset
+    except CatchableError:
+      t.reset
+      raise
+
+template withTransaction*(d: Database | Databases, t, writeMode, body: untyped) =
+  transaction d, t, writeMode, body
+
+template withTransaction*(d: Database | Databases, t, body: untyped) =
+  transaction d, t, autoselect, body
+
+
+# The ultra shorthand mode implementation is a bit
+# of a hack. tx var can only
+# be injected if there is at most one tx template
+# so couldn't overload or use macro- so select by varargs
+# in tx template below, implementation in tx2 and tx3
+
+template tx3(d, writeMode, body: untyped) =
+  transaction d, tx, writeMode, body
+
+template tx2(d, body: untyped) =
+  transaction d, tx, au, body
+
+when maxNim10:
+  macro varargsLen(args: varargs[untyped]): int =
+    return newIntLitNode args.len
+
+template tx*(args: varargs[untyped]) =
+  ## Ultra-shorthand transaction
+  ##
+  ## Equivalent to `withTransaction(d, tx)`
+  ##
+  ## Can only be forced readonly or readwrite using
+  ## `db.tx ro` and `db.tx rw`
+  # TODO: find out how to do this without an immediate
+  # template and a helper immediate template or decide
+  # it can't be done and remove this comment
+  when varargsLen(args) == 3:
+    tx3(args)
+  elif varargsLen(args) == 2:
+    tx2(args)
+  elif varargsLen(args) == 0:
+    error("need code block", args)
+  else:
+    error("too many params", args)
+
+macro initTransaction*(d: Databases, writeMode = readwrite): untyped =
+  ## Start a transaction that spans more than one database.
+  ##
+  ## Each database is specified in a named or non-named tuple, and a transaction
+  ## object representing the same transaction for each database is returned in
+  ## an equivalent tuple: If it is named, the transaction object has the same
+  ## name as its database in the returned tuple. If it is unnamed, the same position.
+  ##
+  ## .. note::
+  ##     Once `commit` or `reset` is called on any of the transaction objects,
+  ##     the transaction is complete.
+  when not compiles d[0]:
+    error("`d` must be tuple with at least one element")
+  let resultList = newNimNode nnkStmtList
+  let resultTuple = newNimNode nnkTupleConstr
+  let tupleType = d.getTypeImpl
+  resultList.add quote do:
+    let firstTransaction {.inject.} = `d`[0].initTransaction(`writeMode`)
+  case tupleType[0].getTypeImpl.kind
+  of nnkObjectTy:
+    # input is regular tuple
+    for i in 0..<tupleType.len:
+      if i == 0:
+        resultTuple.add quote do:
+          firstTransaction
+      else:
+        resultTuple.add quote do:
+          `d`[`i`].initTransaction(firstTransaction)
+  of nnkTupleTy:
+    # input is named tuple
+    for i, tupleTypeElement in tupleType:
+      var tupleElement = newNimNode nnkExprColonExpr
+      tupleElement.add ident tupleTypeElement[0].repr
+      if i == 0:
+        tupleElement.add quote do:
+          firstTransaction
+      else:
+        tupleElement.add quote do:
+          `d`[`i`].initTransaction(firstTransaction)
+      resultTuple.add tupleElement
+  else:
+    error("d param must be named or regular tuple")
+  resultList.add resultTuple
+  result = newNimNode nnkBlockStmt  # own scope to hide firstTransaction variable
+  result.add newNimNode nnkEmpty
+  result.add resultList
+
+template commit*(t: Transactions) =
+  t[0].commit
+
+template reset*(t: Transactions) =
+  t[0].reset
+
+proc database*[A, B](d: Database, name = ""): Database[A, B] =
+  ## Open another database of a different name in an already-connected on-disk storage location.
+  result.env = d.env
+  result.dbi = result.open(name)
+
+proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
+  ## Connect to an on-disk storage location and open a database. If the path does not exist,
+  ## a directory will be created.
+  createDir(filename)
+  result.env = newLMDBEnv(filename, maxdbs, WRITEMAP)
+  discard envSetMapsize(result.env, uint(size))
+  result.dbi = result.open(name)
+
+macro initDatabase*(location: string | Database | Databases, names: untyped = "", maxdbs = 254, size = 10485760): auto =
+  # TODO: This is the result of explorative programming. It worked
+  # great to find a good syntax and is perfectly functional, but could
+  # afford improvements in readability. Probably, every possible syntax
+  # should just be written out as a quote do individually to make it easy
+  # to understand.
+  case names.kind
+  of nnkStrLit, nnkIdent:
+    var T:NimNode
+    var name: NimNode
+    case names.kind:
+    of nnkStrLit:
+      T = ident "string"
+      name = names
+    else:
+      T = names
+      name = newStrLitNode ""
+
+    result = case location.getType.typeKind:
+    of ntyString:
+      quote do:
+        database[`T`, `T`](`location`, `name`, `maxdbs.repr`, `size.repr`)
+    of ntyTuple:
+      quote do:
+        database[`T`, `T`](`location`[0], `name`, `maxdbs.repr`, `size.repr`)
+    else:
+      quote do:
+        database[`T`, `T`](`location`, `name`)
+  of nnkTupleConstr, nnkPar:
+    var resultList:NimNode
+    var resultTuple:NimNode
+    var name = ""
+    var key:NimNode
+    var val:NimNode
+
+    template addItemToResultTuple(key, val, name: untyped) =
+      if resultList.isNil:
+        resultList = newNimNode nnkStmtList
+        resultList.add case location.getType.typeKind:
+          of ntyString:
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
+          of ntyTuple:
+            var l = newNimNode nnkBracketExpr  # 1.4 support
+            l.add location
+            l.add newIntLitNode 0
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`l.repr`, `name.repr`)
+          else:
+            quote do:
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`)
+        if name == "":
+          resultList.add quote do:
+            firstDatabase
+        else:
+          resultTuple = newNimNode nnkTupleConstr
+          var tupleElement = newNimNode nnkExprColonExpr
+          tupleElement.add ident name
+          tupleElement.add quote do:
+            firstDatabase
+          resultTuple.add tupleElement
+      else:
+        if name == "":
+          error("An unnamed tuple can only create the default database with one or two types. Use a named tuple to create multiple named databases", names)
+        else:
+          var tupleElement = newNimNode nnkExprColonExpr
+          tupleElement.add ident name
+          tupleElement.add quote do:
+            database[`key.repr`, `val.repr`](firstDatabase, `name.repr`)
+          resultTuple.add tupleElement
+
+    for i, n in names:
+      #echo "item ", n.repr
+      case n.kind:
+        of nnkExprColonExpr:
+          if key.isNil:
+            name = n[0].repr
+            key = n[1]
+            #echo "assign name ", name, " key ", key.repr
+          else:
+            if val.isNil:
+              #echo "assign val key ", key
+              val = key
+            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
+            addItemToResultTuple(key, val, name)
+            name = n[0].repr
+            key = n[1]
+            val = nil
+        else:
+          if key.isNil:
+            name = ""
+            key = n
+            #echo "assign name '' key ", key.repr
+          else:
+            val = n
+            #echo "do it ", key, ' ', val, ' ', '"', name, '"'
+            addItemToResultTuple(key, val, name)
+            name = ""
+            key = nil
+            val = nil
+    if not key.isNil:
+      val = key
+      addItemToResultTuple(key, val, name)
+    if not resultTuple.isnil:
+      if resultTuple.len > 1:
+        resultList.add resultTuple
+      else:
+        resultList.add resultTuple[0][1]
+    result = newNimNode nnkBlockStmt
+    result.add newNimNode nnkEmpty
+    result.add resultList
+    #echo result.repr
+  else:
+    error("Database definition parameter `names` must be empty, database name as string, type, or or tuple of types", names)
 
