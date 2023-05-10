@@ -796,18 +796,33 @@ proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): D
   result.dbi = result.open(name)
 
 macro initDatabase*(location: string | Database | Databases, names: untyped = "", maxdbs = 254, size = 10485760): auto =
+  # TODO: This is the result of explorative programming. It worked
+  # great to find a good syntax and is perfectly functional, but could
+  # afford improvements in readability. Probably, every possible syntax
+  # should just be written out as a quote do individually to make it easy
+  # to understand.
   case names.kind
-  of nnkStrLit:
+  of nnkStrLit, nnkIdent:
+    var T:NimNode
+    var name: NimNode
+    case names.kind:
+    of nnkStrLit:
+      T = ident "string"
+      name = names
+    else:
+      T = names
+      name = newStrLitNode ""
+
     result = case location.getType.typeKind:
     of ntyString:
       quote do:
-        database[string, string](`location`, `names`, `maxdbs.repr`, `size.repr`)
+        database[`T`, `T`](`location`, `name`, `maxdbs.repr`, `size.repr`)
     of ntyTuple:
       quote do:
-        database[string, string](`location`[0], `names`, `maxdbs.repr`, `size.repr`)
+        database[`T`, `T`](`location`[0], `name`, `maxdbs.repr`, `size.repr`)
     else:
       quote do:
-        database[string, string](`location`, `names`)
+        database[`T`, `T`](`location`, `name`)
   of nnkTupleConstr:
     var resultList:NimNode
     var resultTuple:NimNode
@@ -825,7 +840,7 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
               let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
           of ntyTuple:
             quote do:
-              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`[0], `name.repr`, `maxdbs.repr`, `size.repr`)
+              let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`[0], `name.repr`)
           else:
             quote do:
               let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`)
@@ -891,5 +906,5 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
     result.add resultList
     #echo result.repr
   else:
-    error("Database definition `names` must be empty, database name as string, or tuple", names)
+    error("Database definition parameter `names` must be empty, database name as string, type, or or tuple of types", names)
 

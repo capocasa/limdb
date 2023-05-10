@@ -470,3 +470,32 @@ block:
   # TODO: assert compile error for
   # let db = initDatabase(testLocation2, (int, int, int))
 
+block:
+  let dbs = initDatabase(db, (foo: int, bar: int, string, fuz: FooNum, LetterNum))
+  assert dbs.foo is Database[int, int]
+
+  let db = initDatabase(dbs, (foo: string))
+  assert db is Database[string, string]
+
+  let db2 = initDatabase(dbs, (int, int))
+  assert db2 is Database[int, int]
+  
+  let db3 = initDatabase(db, (int, int))
+  assert db3 is Database[int, int]
+  
+  let db4 = initDatabase(db, int)
+  assert db4 is Database[int, int]
+  
+block:
+  let testLocation3 = getTempDir() / "tlimdb3"
+  removeDir(testLocation3)
+  let db = initDatabase(testLocation3, int)
+  assert db is Database[int, int]
+
+block:
+  let testLocation3 = getTempDir() / "tlimdb3"
+  removeDir(testLocation3)
+  let db = initDatabase(testLocation3, (foo: int, bar: string))
+  assert db is (Database[int, int], Database[string, string])
+
+
