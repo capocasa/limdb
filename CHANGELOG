@@ -1,7 +1,5 @@
 0.3.0      support all of Nim's basic system types through generics
            -> breaks compatibility, must now provide types
-
-           support read-only transactions with `writeMode` parameter
  
            use writable memory-mapped mode for performance (Nim's static
            safety is enough, don't need C's costly runtime safety)
@@ -15,6 +13,8 @@
 
            Support transactions spanning several databases by
            passing a tuple of databases to `initTransaction` or `withTransaction`
+
+           Fix always using read/write transactions in database access procs
 
 0.2.0      add getOrDefault, hasKeyOrPut, getOrPut, proc and take
 

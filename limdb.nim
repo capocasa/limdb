@@ -235,7 +235,7 @@ proc `[]`*[A, B](d: Database[A, B], key: A): B =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   try:
     result = t[key]
   finally:
@@ -246,7 +246,7 @@ proc `[]=`*[A, B](d: Database[A, B], key: A, val: B) =
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     t[key] = val
   except CatchableError:
@@ -259,7 +259,7 @@ proc del*[A, B](d: Database[A, B], key: A, val: B) =
   ##
   ## .. note::
   ##     This inits and commits a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     t.del(key, val)
   except CatchableError:
@@ -276,7 +276,7 @@ proc del*[A, B](d: Database[A, B], key: A) =
   ## .. note::
   ##     LMDB requires you to delete by key and value. This proc fetches
   ##     the value for you, giving you the more familiar interface.
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     t.del(key)
   except CatchableError:
@@ -286,7 +286,7 @@ proc del*[A, B](d: Database[A, B], key: A) =
 
 proc hasKey*[A, B](d: Database[A, B], key: A):bool =
   ## See if a key exists without fetching any data in a transaction
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   result = t.hasKey(key)
   t.reset()
 
@@ -441,7 +441,7 @@ iterator values*[A, B](d: Database[A, B]): B =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   try:
     for value in t.values:
       yield value
@@ -453,7 +453,7 @@ iterator pairs*[A, B](d: Database[A, B]): (A, B) =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   try:
     for pair in t.pairs:
       yield pair
@@ -465,7 +465,7 @@ iterator mvalues*[A, B](d: Database[A, B]): var B =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     for value in t.mvalues:
       yield value
@@ -478,7 +478,7 @@ iterator mpairs*[A, B](d: Database[A, B]): (A, var B) =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     for k, v in t.mpairs:
       yield (k, v)
@@ -490,7 +490,7 @@ proc len*[A, B](d: Database[A, B]): int =
   ##
   ## .. note::
   ##     This inits and resets a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   result = t.len
   t.reset()
 
@@ -515,7 +515,7 @@ proc clear*[A, B](d: Database[A, B]) =
   ##
   ## .. note::
   ##     This creates and commits a transaction under the hood
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   t.clear
   t.commit
 
@@ -523,8 +523,6 @@ template close*[A, B](d: Database[A, B]) =
   ## Close the database directory. This will free up some memory and make all databases
   ## that were created from the same directory unavailable. This is not necessary for many use cases.
   ##
-  ## .. note::
-  ##     This creates and commits a transaction under the hood
   envClose(d.env)
 
 proc getOrDefault*[A, B](t: Transaction[A, B], key: A):B=
@@ -537,7 +535,7 @@ proc getOrDefault*[A, B](t: Transaction[A, B], key: A):B=
 
 proc getOrDefault*[A, B](d: Database[A, B], key: A):B =
   ## Fetch a value in the database and return the provided default value if it does not exist
-  let t = d.initTransaction
+  let t = d.initTransaction readonly
   try:
     result = t[key]
   except KeyError:
@@ -553,7 +551,7 @@ proc hasKeyOrPut*[A, B](t: Transaction[A, B], key: A, val: B): bool =
 
 proc hasKeyOrPut*[A, B](d: Database[A, B], key: A, val: B): bool =
   ## Returns true if `key` is in the Database, otherwise inserts `value`.
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     result = key in t
     if result:
@@ -575,7 +573,7 @@ proc getOrPut*[A, B](t: Transaction[A, B], key: A, val: B): B =
 
 proc getOrPut*[A, B](d: Database[A, B], key: A, val: B): B =
   ## Retrieves value of key as mutable copy or enters and returns val if not present
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     result = t[key]
     t.reset()
@@ -600,7 +598,7 @@ proc pop*[A, B](t: Transaction[A, B], key: A, val: var B): bool =
 proc pop*[A, B](d: Database[A, B], key: A, val: var B): bool =
   ## Delete value in database. If it existed, return
   ## true and place value into `val`
-  let t = d.initTransaction
+  let t = d.initTransaction readwrite
   try:
     val = t[key]
     t.del(key)
@@ -634,100 +632,98 @@ proc take*[A, B](d: Database[A, B], key: A, val: var B): bool =
 # mgetOrPut            Returns mutable value, can't directly write memory (yet), give getOrPut instead
 # withValue            Also returns mutable value, unsure how useful it is
 
-when NimMajor >= 1 and NimMinor >= 4:
+macro callsTaggedAs(p:proc, tag: string):untyped =
+  for t in getTagsList(p):
+    if t.eqIdent(tag):
+      return newLit(true)
+  newLit(false)
 
-  macro callsTaggedAs(p:proc, tag: string):untyped =
-    for t in getTagsList(p):
-      if t.eqIdent(tag):
-        return newLit(true)
-    newLit(false)
-
-  template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
-    ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
-    ##
-    ## .. note::
-    ##     Available using Nim 1.4 and above
-    static:
-      when writeMode isnot WriteMode:
-        # Cannot use WriteMode type for param because untyped param positions must 
-        # match for overloaded templates. So at least check the type manually
-        error("Parameter writeMode must be of type WriteMode")
-    block:
-      const writes = static:
-        proc bodyproc() {.compileTime.} =
-          # dump body into a procedure, the better to check
-          # it for effects using the small macro above at compiletime
-          let t = d.initTransaction
-          body
-
-        # prevent manual reset/commit, auto-determine readonly status
-        when callsTaggedAs(bodyproc, "Concludes"):
-          error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
-        callsTaggedAs(bodyproc, "Writes")
-
-      const txMode = static:
-        case writeMode:
-        of au, autoselect:
-          if writes:
-            readwrite
-          else:
-            readonly
-        of ro, readonly:
-          when writes:
-            error("Cannot write to transaction block marked readonly")
-          readonly
-        of rw, readwrite:
-          when not writes:
-            hint("Transaction block marked readwrite but not written to. Consider marking it read-only or leaving at autoselect transaction")
-          readwrite
-      let t {.inject.} = d.initTransaction(txMode)
-      try:
+template transaction*(d: Database | Databases, t, writeMode, body: untyped) =
+  ## Execute a block of code in a transaction. Commit if there are any writes, otherwise reset.
+  ##
+  ## .. note::
+  ##     Available using Nim 1.4 and above
+  static:
+    when writeMode isnot WriteMode:
+      # Cannot use WriteMode type for param because untyped param positions must 
+      # match for overloaded templates. So at least check the type manually
+      error("Parameter writeMode must be of type WriteMode")
+  block:
+    const writes = static:
+      proc bodyproc() {.compileTime.} =
+        # dump body into a procedure, the better to check
+        # it for effects using the small macro above at compiletime
+        let t = d.initTransaction
         body
-        when writes or writeMode == readwrite:
-          t.commit
+
+      # prevent manual reset/commit, auto-determine readonly status
+      when callsTaggedAs(bodyproc, "Concludes"):
+        error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
+      callsTaggedAs(bodyproc, "Writes")
+
+    const txMode = static:
+      case writeMode:
+      of au, autoselect:
+        if writes:
+          readwrite
         else:
-          t.reset
-      except CatchableError:
+          readonly
+      of ro, readonly:
+        when writes:
+          error("Cannot write to transaction block marked readonly")
+        readonly
+      of rw, readwrite:
+        when not writes:
+          hint("Transaction block marked readwrite but not written to. Consider marking it read-only or leaving at autoselect transaction")
+        readwrite
+    let t {.inject.} = d.initTransaction(txMode)
+    try:
+      body
+      when writes or writeMode == readwrite:
+        t.commit
+      else:
         t.reset
-        raise
-  
-  template withTransaction*(d: Database | Databases, t, writeMode, body: untyped) =
-    transaction d, t, writeMode, body
+    except CatchableError:
+      t.reset
+      raise
 
-  template withTransaction*(d: Database | Databases, t, body: untyped) =
-    transaction d, t, autoselect, body
+template withTransaction*(d: Database | Databases, t, writeMode, body: untyped) =
+  transaction d, t, writeMode, body
+
+template withTransaction*(d: Database | Databases, t, body: untyped) =
+  transaction d, t, autoselect, body
 
 
-  # The ultra shorthand mode implementation is a bit
-  # of a hack. tx var can only
-  # be injected if there is at most one tx template
-  # so couldn't overload or use macro- so select by varargs
-  # in tx template below, implementation in tx2 and tx3
+# The ultra shorthand mode implementation is a bit
+# of a hack. tx var can only
+# be injected if there is at most one tx template
+# so couldn't overload or use macro- so select by varargs
+# in tx template below, implementation in tx2 and tx3
 
-  template tx3(d, writeMode, body: untyped) =
-    transaction d, tx, writeMode, body
-  
-  template tx2(d, body: untyped) =
-    transaction d, tx, au, body
+template tx3(d, writeMode, body: untyped) =
+  transaction d, tx, writeMode, body
 
-  template tx*(args: varargs[untyped]) =
-    ## Ultra-shorthand transaction
-    ##
-    ## Equivalent to `withTransaction(d, tx)`
-    ##
-    ## Can only be forced readonly or readwrite using
-    ## `db.tx ro` and `db.tx rw`
-    # TODO: find out how to do this without an immediate
-    # template and a helper immediate template or decide
-    # it can't be done and remove this comment
-    when varargsLen(args) == 3:
-      tx3(args)
-    elif varargsLen(args) == 2:
-      tx2(args)
-    elif varargsLen(args) == 0:
-      error("need code block", args)
-    else:
-      error("too many params", args)
+template tx2(d, body: untyped) =
+  transaction d, tx, au, body
+
+template tx*(args: varargs[untyped]) =
+  ## Ultra-shorthand transaction
+  ##
+  ## Equivalent to `withTransaction(d, tx)`
+  ##
+  ## Can only be forced readonly or readwrite using
+  ## `db.tx ro` and `db.tx rw`
+  # TODO: find out how to do this without an immediate
+  # template and a helper immediate template or decide
+  # it can't be done and remove this comment
+  when varargsLen(args) == 3:
+    tx3(args)
+  elif varargsLen(args) == 2:
+    tx2(args)
+  elif varargsLen(args) == 0:
+    error("need code block", args)
+  else:
+    error("too many params", args)
 
 macro initTransaction*(d: Databases, writeMode = readwrite): untyped =
   ## Start a transaction that spans more than one database.
