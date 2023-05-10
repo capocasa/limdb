@@ -665,7 +665,7 @@ when NimMajor >= 1 and NimMinor >= 4:
           error("Transaction in a `withTransaction` block are automatically committed or reset at the end of the block. Use `initTransaction` to do it manually.")
         callsTaggedAs(bodyproc, "Writes")
 
-      let txMode = static:
+      const txMode = static:
         case writeMode:
         of au, autoselect:
           if writes:
@@ -683,7 +683,7 @@ when NimMajor >= 1 and NimMinor >= 4:
       let t {.inject.} = d.initTransaction(txMode)
       try:
         body
-        when writes:
+        when writes or writeMode == readwrite:
           t.commit
         else:
           t.reset
