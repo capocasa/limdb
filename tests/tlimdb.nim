@@ -52,7 +52,9 @@ block:
   assert len(t) == 0, "length with transaction"
   t.reset()
 
-let db2 = initDatabase(db, (db2: string, string))
+let testLocation2 = getTempDir() / "tlimdb"
+removeDir(testLocation2)
+let db2 = initDatabase(testLocation2, (string, string))
 doAssertRaises(Exception): discard db2["foo"]
 
 db2["foo"] = "bar"
@@ -142,7 +144,7 @@ block:
   assert len(db2) == 4, "count length"
 
 block:
-  let db3 = db.initDatabase((db3: string, string))
+  let db3 = initDatabase(db, (foo: string, string)).foo
   assert db3.getOrDefault("foo") == "", "key does not exist, use default"
   db3["foo"] = "bar"
   assert db3.getOrDefault("foo") == "bar", "key there, use value"
@@ -155,7 +157,7 @@ block:
   t.reset()
 
 block:
-  let db4 = db.initDatabase((db4: string, string))
+  let db4 = db.initDatabase((foo: string, string)).foo
   assert db4.hasKeyOrPut("foo", "bar") == false, "returns false if key not in database"
   assert db4["foo"] == "bar", "value was set"
   assert db4.hasKeyOrPut("foo", "fuz"), "returns true if key in database"
@@ -170,7 +172,7 @@ block:
   t.reset
 
 block:
-  let db5 = db.initDatabase((db5: string, string))
+  let db5 = db.initDatabase((db5: string, string)).db5
   let s = db5.getOrPut("foo", "bar")
   assert s == "bar", "value was returned"
   assert db5["foo"] == "bar", "value was put"
@@ -187,7 +189,7 @@ block:
   t.reset
 
 block:
-  let db6 = db.initDatabase((db6: string, string))
+  let db6 = db.initDatabase((db6: string, string)).db6
   var val: string
   assert not db6.pop("foo", val), "not there"
   assert not db6.take("foo", val), "not there"
@@ -218,39 +220,37 @@ block:
   assert not t.hasKey("foo"), "no longer there"
   t.reset
 
-when NimMajor >= 1 and NimMinor >= 4:
-  block:
-    let db7 = db.initDatabase((db7: string, string))
-    db7.withTransaction t:
-      t["foo"] = "bar"
-      t["fuz"] = "buz"
+block:
+  let db7 = db.initDatabase((db7: string, string)).db7
+  db7.withTransaction t:
+    t["foo"] = "bar"
+    t["fuz"] = "buz"
 
-    assert db7["foo"] == "bar", "written through transaction"
-    assert db7["fuz"] == "buz", "written through transaction"
+  assert db7["foo"] == "bar", "written through transaction"
+  assert db7["fuz"] == "buz", "written through transaction"
 
-    db7.withTransaction tt:
-      assert tt["foo"] == "bar", "read through transaction"
-      assert tt["fuz"] == "buz", "read through transaction"
+  db7.withTransaction tt:
+    assert tt["foo"] == "bar", "read through transaction"
+    assert tt["fuz"] == "buz", "read through transaction"
 
-    try:
-      withTransaction(db7, t):
-        t["buz"] = "buz"
-        raise newException(CatchableError, "catch me if you can")
-    except CatchableError:
-      discard
+  try:
+    withTransaction(db7, t):
+      t["buz"] = "buz"
+      raise newException(CatchableError, "catch me if you can")
+  except CatchableError:
+    discard
 
-    assert "buz" notin db7, "rollback on exception"
+  assert "buz" notin db7, "rollback on exception"
 
-    # TODO: Test for defect on manual reset/commit
+  # TODO: Test for defect on manual reset/commit
 
 block:
-  let db8 = db.initDatabase((db8: int, int))
+  let db8 = db.initDatabase((db8: int, int)).db8
   db8[123] = 456
   assert db8[123] == 456
-
-
+    
 block:
-  let db9 = db.initDatabase((db9: int, string))
+  let db9 = db.initDatabase((db9: int, string)).db9
   db9[3] = "fuz"
   db9[1] = "foo"
   db9[4] = "buz"
@@ -264,7 +264,7 @@ block:
 const p = "/tmp/db"
 
 block:
-  let db10 = db.initDatabase((db10: int, int))
+  let db10 = db.initDatabase((db10: int, int)).db10
   db10.withTransaction(t):
     t[3] = 3
     t[2] = 2
@@ -275,7 +275,7 @@ block:
     assert t[3] == 3
 
 block:
-  let db11 = db.initDatabase((db11: float, int))
+  let db11 = db.initDatabase((db11: float, int)).db11
 
   db11.withTransaction(t):
     t[3.1] = 3
@@ -287,7 +287,7 @@ block:
     assert t[3.1] == 3
 
 block:
-  let db12 = db.initDatabase((db12: string, string))
+  let db12 = db.initDatabase((db12: string, string)).db12
   db12.withTransaction(t):
     t["foo"] = "c"
     t["bar"] = "b"
@@ -300,7 +300,7 @@ block:
   assert r == {"bar": "b", "foo": "c", "fuz": "a"}
 
 block:
-  let db13 = db.initDatabase((db13: array[3, float], string))
+  let db13 = db.initDatabase((db13: array[3, float], string)).db13
 
   db13.withTransaction(t):
     t[ [1.1, 2.2, 3.3] ] = "foo"
@@ -322,7 +322,7 @@ type Foo = object
   b: array[3, int]
 
 block:
-  let db14 = db.initDatabase((db14: Foo, float))
+  let db14 = db.initDatabase((db14: Foo, float)).db14
 
   db14.withTransaction(t):
 
@@ -331,7 +331,7 @@ block:
   assert db14[ Foo( a: 1, b: [4,5,6]) ] == 1.1
 
 block:
-  let db15 = db.initDatabase((db15: int, Foo))
+  let db15 = db.initDatabase((db15: int, Foo)).db15
 
   db15.withTransaction(t):
     t[ 0 ] = Foo( a: 1, b: [1,2,3] )
@@ -344,7 +344,7 @@ block:
   assert r == {0: Foo( a: 1, b: [1,2,3] ), 1: Foo( a: 2, b: [4,5,6] )}
 
 block:
-  let db16 = db.initDatabase((db16: (int, int), tuple[a: int, b: int]))
+  let db16 = db.initDatabase((db16: (int, int), tuple[a: int, b: int])).db16
 
   db16[ (2, 4) ] = (a: 2, b: 4)
   db16[ (6, 8) ] = (a: 6, b: 8)
@@ -357,7 +357,7 @@ block:
   assert r == { (2, 4): (a: 2, b: 4), (6, 8): (a: 6, b: 8) }
 
 block:
-  let db17 = db.initDatabase((db17: int, seq[float]))
+  let db17 = db.initDatabase((db17: int, seq[float])).db17
 
   db17.withTransaction(t):
     t[0] = @[1.0,2.0,3.0]
@@ -370,7 +370,7 @@ type
     a = 10, b = 20, c = 30, d = 40
 
 block:
-  let db18 = db.initDatabase((db18: FooNum, LetterNum))
+  let db18 = db.initDatabase((db18: FooNum, LetterNum)).db18
 
   db18.tx:  # ultra-shorthand
     tx[x] = c
@@ -395,9 +395,7 @@ block:
 
 
 block:
-  let db19 = db.initDatabase((db19: int, string))
-  let db20 = db.initDatabase((db21: float, float))
-  let db21 = db.initDatabase((db122: string, int))
+  let (db19, db20, db21) = db.initDatabase((db19: int, string, db21: float, db122: string, int))
 
   let t = initTransaction((db19, db20, db21))
   t[0][3] = "foo"
@@ -455,7 +453,6 @@ block:
   # `t.commit/t.reset` in transaction block
 
 block:
-  let testLocation2 = getTempDir() / "tlimdb2"
   removeDir(testLocation2)
   let dbs = initDatabase(testLocation2, (foo: int, bar: int, string, fuz: FooNum, LetterNum))
 
@@ -465,17 +462,18 @@ block:
 
   # assert dbs.tupleLen == 3
 
-  let db = initDatabase(testLocation2, (int, int))
+  let testLocation3 = getTempDir() / "tlimdb3"
+  removeDir(testLocation3)
+  let db = initDatabase(testLocation3, (int, int))
   assert db is Database[int, int]
   
   # TODO: assert compile error for
   # let db = initDatabase(testLocation2, (int, int, int))
-
 block:
   let dbs = initDatabase(db, (foo: int, bar: int, string, fuz: FooNum, LetterNum))
   assert dbs.foo is Database[int, int]
 
-  let db = initDatabase(dbs, (foo: string))
+  let db = initDatabase(dbs, (foo: string)).foo
   assert db is Database[string, string]
 
   let db2 = initDatabase(dbs, (int, int))
@@ -488,15 +486,15 @@ block:
   assert db4 is Database[int, int]
   
 block:
-  let testLocation3 = getTempDir() / "tlimdb3"
-  removeDir(testLocation3)
-  let db = initDatabase(testLocation3, int)
+  let testLocation4 = getTempDir() / "tlimdb4"
+  removeDir(testLocation4)
+  let db = initDatabase(testLocation4, int)
   assert db is Database[int, int]
 
 block:
-  let testLocation3 = getTempDir() / "tlimdb3"
-  removeDir(testLocation3)
-  let db = initDatabase(testLocation3, (foo: int, bar: string))
+  let testLocation5 = getTempDir() / "tlimdb5"
+  removeDir(testLocation5)
+  let db = initDatabase(testLocation5, (foo: int, bar: string))
   assert db is (Database[int, int], Database[string, string])
 
 
