@@ -848,7 +848,8 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
             quote do:
               let firstDatabase{.inject.} = database[`key.repr`, `val.repr`](`location.repr`, `name.repr`, `maxdbs.repr`, `size.repr`)
           of ntyTuple:
-            var l = newNimNode nnkBracketExpr  # 1.4 support
+            # 1.4 support: `l.repr` and these lines instead of `location.repr`[0]
+            var l = newNimNode nnkBracketExpr
             l.add location
             l.add newIntLitNode 0
             quote do:
@@ -909,10 +910,7 @@ macro initDatabase*(location: string | Database | Databases, names: untyped = ""
       val = key
       addItemToResultTuple(key, val, name)
     if not resultTuple.isnil:
-      if resultTuple.len > 1:
-        resultList.add resultTuple
-      else:
-        resultList.add resultTuple[0][1]
+      resultList.add resultTuple
     result = newNimNode nnkBlockStmt
     result.add newNimNode nnkEmpty
     result.add resultList
