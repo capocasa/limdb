@@ -528,6 +528,8 @@ For transactions, it's recommended to use the new `readonly` parameter for `init
 
 Consider switching to the safer `withTransaction` syntax.
 
+If you still need them, the `0.2 docs <./0.2/limdb.html>`_ are still available.
+
 Why is it called LimDB?
 #######################
 
