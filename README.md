@@ -46,5 +46,7 @@ echo db["foo"]  # also prints "bar"
 ```
 That's it. If you just need to quickly save some data, you can stop reading here and start programming.
 
+You can go much deeper though- convenient transactions, read/write derived from code, all Nim data types except `ref`, a convenient initialization syntaxes to initialize multiple databases and transactions that span them.
+
 [API Documentation](https://capocasa.github.io/limdb/limdb.html)
 
