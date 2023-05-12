@@ -19,6 +19,19 @@ While programming with LimDB feels like using a table, it is still very much lmd
 Some common boilerplate is automated and LimDB is clever about bundling lmdb's moving
 parts, but there are no bolted-on bits or obscuring of lmdb's behavior.
 
+What's new?
+###########
+
+Since version 0.2, LimDB added:
+
+- `withTransaction` code block syntax for safe transactions with overridable
+  readonly/readwrite auto-selection
+- Support for all Nim system types except `ref`
+- convenient initialization syntax for multiple databases of different types
+- transactions spanning multiple databases
+- ultra-shorthand syntax for quick throwaway programs
+- readonly transactions (0.2 used only writable ones)
+
 Simple Usage
 ############
 
@@ -474,9 +487,33 @@ better performance.
     It's usually safer and more convenient to use the `withTransaction`
     syntax instead.
 
+Deployment
+##########
+
+LimDB relies on nim-lmdb for low-level calls, which in turn uses dynamic linking. Static linking or compiling the C sources in is not supported.
+
+*Linux*
+
+The resulting program will depend on `liblmdb0.so`, which you can install using the system's package manager, and require for distribution.
+
+*Windows*
+
+The program will depend on `liblmdb.dll`. A working 64-bit version nimmed from msys2 can be downloaded from this project and should be placed in the same directory as your executable. 
+
+*OSX*
+
+The program depends lin `liblmdb.dynlib`. The easiest way to get it is to install it via homebrew.
+
+To distribute it with your program, you can change its baked-in location to the binary file directory like so:
+
+`install_name_tool -id "@loader_path/liblmdb.dylib" liblmdb.dylib`
+
+For other systems, run the program to find out the file name of the required library, then build or install it for that platform.
+
 Improvement Areas Of Interest
 #############################
 
+# Patch nim-lmdb to allow static linking and including the C sources
 * Allow auto-unpacking of multi-database transaction variables, e.g. (db1, db2).withTransaction t1, t2 readonly
 * Document how many copies are made when accessing and writing- there aren't many, and no more than in LMDB code in C
 * Useful iterators: `keysFrom`, `keysBetween`, other common usage of lmdb cursors
@@ -485,7 +522,11 @@ Improvement Areas Of Interest
 Migrating from 0.2
 ##################
 
-0.2 code works unchanged.
+0.2 code works unchanged and performance is improved for reads directly on the database object.
+
+For transactions, it's recommended to use the new `readonly` parameter for `initTransaction` calls where appropriate.
+
+Consider switching to the safer `withTransaction` syntax.
 
 Why is it called LimDB?
 #######################
