@@ -297,17 +297,25 @@ template contains*[A, B](d: Database[A, B], key: A):bool =
   ## Alias for hasKey to support `in` syntax in transactions
   hasKey(d, key)
 
-iterator keys*[A, B](t: Transaction[A, B]): A =
+iterator keys*[A, B](t: Transaction[A, B], reverse:bool = false): A =
   ## Iterate over all keys in a database with a transaction
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
-  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  var err:cint
+  if reverse:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.LAST)
+  else:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
       yield fromBlob(key, A)
+      var err:cint
       while true:
-        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if reverse:
+          err = cursorGet(cursor, addr(key), addr(data), op=PREV)
+        else:
+          err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           yield fromBlob(key, A)
         elif err == lmdb.NOTFOUND:
@@ -317,17 +325,25 @@ iterator keys*[A, B](t: Transaction[A, B]): A =
   finally:
     cursor.cursorClose
 
-iterator values*[A, B](t: Transaction[A, B]): B =
+iterator values*[A, B](t: Transaction[A, B], reverse:bool = false): B =
   ## Iterate over all values in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
-  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  var err:cint
+  if reverse:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.LAST)
+  else:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
       yield fromBlob(data, B)
+      var err:cint
       while true:
-        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if reverse:
+          err = cursorGet(cursor, addr(key), addr(data), op=PREV)
+        else:
+          err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           yield fromBlob(data, B)
         elif err == lmdb.NOTFOUND:
@@ -337,13 +353,17 @@ iterator values*[A, B](t: Transaction[A, B]): B =
   finally:
     cursor.cursorClose
 
-iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
+iterator mvalues*[A, B](t: Transaction[A, B], reverse:bool = false): var B {.tags: [Writes].} =
   ## Iterate over all values in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
-  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  var err:cint
+  if reverse:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.LAST)
+  else:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
       var d: ref string
@@ -353,8 +373,12 @@ iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
         raise newException(IOError, $strerror(err))
+      var err:cint
       while true:
-        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if reverse:
+          err = cursorGet(cursor, addr(key), addr(data), op=PREV)
+        else:
+          err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           var d:ref string
           new(d)
@@ -370,17 +394,25 @@ iterator mvalues*[A, B](t: Transaction[A, B]): var B {.tags: [Writes].} =
   finally:
     cursor.cursorClose
 
-iterator pairs*[A, B](t: Transaction[A, B]): (A, B) =
+iterator pairs*[A, B](t: Transaction[A, B], reverse:bool = false): (A, B) =
   ## Iterate over all key-value pairs in a database with a transaction.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
+  var err:cint
   try:
-    let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+    if reverse:
+      err = cursorGet(cursor, addr(key), addr(data), lmdb.LAST)
+    else:
+      err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
     if err == 0:
       yield (fromBlob(key, A), fromBlob(data, B))
+      var err:cint
       while true:
-        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if reverse:
+          err = cursorGet(cursor, addr(key), addr(data), op=PREV)
+        else:
+          err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           yield (fromBlob(key, A), fromBlob(data, B))
         elif err == lmdb.NOTFOUND:
@@ -390,13 +422,17 @@ iterator pairs*[A, B](t: Transaction[A, B]): (A, B) =
   finally:
     cursor.cursorClose
 
-iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
+iterator mpairs*[A, B](t: Transaction[A, B], reverse:bool = false): (A, var B) {.tags: [Writes].} =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
   ## the values to be modified.
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
-  let err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
+  var err:cint
+  if reverse:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.LAST)
+  else:
+    err = cursorGet(cursor, addr(key), addr(data), lmdb.FIRST)
   try:
     if err == 0:
       var d: ref B
@@ -406,8 +442,12 @@ iterator mpairs*[A, B](t: Transaction[A, B]): (A, var B) {.tags: [Writes].} =
       var mdata = d[].toBlob
       if 0 != cursorPut(cursor, addr(key), addr(mdata), 0):
         raise newException(IOError, $strerror(err))
+      var err:cint
       while true:
-        let err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
+        if reverse:
+          err = cursorGet(cursor, addr(key), addr(data), op=PREV)
+        else:
+          err = cursorGet(cursor, addr(key), addr(data), op=NEXT)
         if err == 0:
           var d:ref B
           new(d)
