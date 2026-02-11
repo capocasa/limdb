@@ -70,13 +70,17 @@ proc open*[A, B](d: Database[A, B], name: string): Dbi =
   result = dummy.dbiOpen(name, if name == "": 0 else: lmdb.CREATE)
   dummy.commit()
 
-proc compare(a, b: SomeNumber | SomeOrdinal): int =
+proc compare(a, b: SomeNumber | SomeOrdinal | string): int =
   if a < b:
     -1
   elif a > b:
     1
   else:
     0
+
+# note that the above is not used for pure string keys,
+# that is handled by lmdb internally. but this is
+# needed in case a string is part of an object.
 
 proc compare[N, T](a, b: array[N, T]): int =
   for i in 0..<a.len:
