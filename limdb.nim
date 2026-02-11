@@ -23,6 +23,7 @@ type
     ## A key-value database in a memory-mapped on-disk storage location.
     env*: LMDBEnv
     dbi*: Dbi
+    autoserialize*: bool
 
   Transaction*[A, B] = object
     ## A transaction may be created and reads or writes performed on it instead of directly
@@ -30,6 +31,7 @@ type
     ## at the same time, and changes happen all at once at the end or not at all.
     txn*: LMDBTxn
     dbi*: Dbi
+    autoserialize*: bool
 
   Blob* = Val
     ## A variable-length collection of bytes that can be used as either a key or value. This
@@ -171,6 +173,19 @@ proc wrapCompare(T: typedesc): auto =
     result = proc (a, b: ptr Blob): cint {.cdecl.} =
       compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
+template checkAutoSerialize(autoserialize: bool, T: typedesc) =
+  ## Raise an exception if T requires serialization but autoserialize is disabled
+  when T isnot string:
+    when T is seq:
+      # For seq, check if element type needs serialization
+      type E = typeof(default(T)[0])
+      when not supportsCopyMem(E):
+        if not autoserialize:
+          raise newException(ValueError, "Type " & $T & " requires serialization but autoserialize is disabled")
+    elif not supportsCopyMem(T):
+      if not autoserialize:
+        raise newException(ValueError, "Type " & $T & " requires serialization but autoserialize is disabled")
+
 proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
   ## Start a transaction from a database.
   ##
@@ -185,6 +200,7 @@ proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transacti
   ##     Calling neither `reset` nor `commit` on a transaction can block database access.
   ##     This commonly happens when an exception is raised.
   result.dbi = d.dbi
+  result.autoserialize = d.autoserialize
   let flags = case writeMode:
     of rw, readwrite:
       0
@@ -259,6 +275,8 @@ proc fromBlob*[U](b: Blob, T: typedesc[seq[U]]): seq[U] =
 
 proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   # Read a value from a key in a transaction
+  checkAutoSerialize(t.autoserialize, A)
+  checkAutoSerialize(t.autoserialize, B)
   var k = key.toBlob
   var d: Blob
   let err = lmdb.get(t.txn, t.dbi, addr(k), addr(d))
@@ -270,6 +288,8 @@ proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
 
 proc `[]=`*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   # Writes a value to a key in a transaction
+  checkAutoSerialize(t.autoserialize, A)
+  checkAutoSerialize(t.autoserialize, B)
   var k = key.toBlob
   var v = val.toBlob
   let err = lmdb.put(t.txn, t.dbi, addr(k), addr(v), 0)
@@ -284,6 +304,8 @@ proc del*[A, B](t: Transaction[A, B], key: A, val: B) {.tags: [Writes].} =
   ## Delete a key-value pair
   # weird lmdb quirk, you delete with both key and value because you can "shadow"
   # a key's value with another put
+  checkAutoSerialize(t.autoserialize, A)
+  checkAutoSerialize(t.autoserialize, B)
   var k = key.toBlob
   var v = val.toBlob
   let err = lmdb.del(t.txn, t.dbi, addr(k), addr(v))
@@ -304,6 +326,7 @@ template del*[A, B](t: Transaction[A, B], key: A) =
 
 proc hasKey*[A, B](t: Transaction[A, B], key: A): bool =
   ## See if a key exists without fetching any data
+  checkAutoSerialize(t.autoserialize, A)
   var key = key.toBlob
   var dummyData:Blob
   return 0 == get(t.txn, t.dbi, addr(key), addr(dummyData))
@@ -392,6 +415,7 @@ template contains*[A, B](d: Database[A, B], key: A):bool =
 
 iterator keys*[A, B](t: Transaction[A, B], reverse:bool = false): A =
   ## Iterate over all keys in a database with a transaction
+  checkAutoSerialize(t.autoserialize, A)
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
@@ -420,6 +444,7 @@ iterator keys*[A, B](t: Transaction[A, B], reverse:bool = false): A =
 
 iterator values*[A, B](t: Transaction[A, B], reverse:bool = false): B =
   ## Iterate over all values in a database with a transaction.
+  checkAutoSerialize(t.autoserialize, B)
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
@@ -449,6 +474,7 @@ iterator values*[A, B](t: Transaction[A, B], reverse:bool = false): B =
 iterator mvalues*[A, B](t: Transaction[A, B], reverse:bool = false): var B {.tags: [Writes].} =
   ## Iterate over all values in a database with a transaction, allowing
   ## the values to be modified.
+  checkAutoSerialize(t.autoserialize, B)
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
@@ -489,6 +515,8 @@ iterator mvalues*[A, B](t: Transaction[A, B], reverse:bool = false): var B {.tag
 
 iterator pairs*[A, B](t: Transaction[A, B], reverse:bool = false): (A, B) =
   ## Iterate over all key-value pairs in a database with a transaction.
+  checkAutoSerialize(t.autoserialize, A)
+  checkAutoSerialize(t.autoserialize, B)
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
@@ -518,6 +546,8 @@ iterator pairs*[A, B](t: Transaction[A, B], reverse:bool = false): (A, B) =
 iterator mpairs*[A, B](t: Transaction[A, B], reverse:bool = false): (A, var B) {.tags: [Writes].} =
   ## Iterate over all key-value pairs in a database with a transaction, allowing
   ## the values to be modified.
+  checkAutoSerialize(t.autoserialize, A)
+  checkAutoSerialize(t.autoserialize, B)
   let cursor = cursorOpen(t.txn, t.dbi)
   var key:Blob
   var data:Blob
@@ -925,18 +955,20 @@ template commit*(t: Transactions) =
 template reset*(t: Transactions) =
   t[0].reset
 
-proc database*[A, B](d: Database, name = ""): Database[A, B] =
+proc database*[A, B](d: Database, name = "", autoserialize = true): Database[A, B] =
   ## Open another database of a different name in an already-connected on-disk storage location.
   result.env = d.env
   result.dbi = result.open(name)
+  result.autoserialize = autoserialize
 
-proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760): Database[A, B] =
+proc database*[A, B](filename = "", name = "", maxdbs = 254, size = 10485760, autoserialize = true): Database[A, B] =
   ## Connect to an on-disk storage location and open a database. If the path does not exist,
   ## a directory will be created.
   createDir(filename)
   result.env = newLMDBEnv(filename, maxdbs, WRITEMAP)
   discard envSetMapsize(result.env, uint(size))
   result.dbi = result.open(name)
+  result.autoserialize = autoserialize
 
 macro initDatabase*(location: string | Database | Databases, names: untyped = "", maxdbs = 254, size = 10485760): auto =
   # TODO: This is the result of explorative programming. It worked
