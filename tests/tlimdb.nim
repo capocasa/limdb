@@ -9,6 +9,8 @@ import os
 import limdb
 import typetraits
 
+removeFile("tests/tlimdb")
+
 let testLocation = getTempDir() / "tlimdb"
 removeDir(testLocation)
 let db = initDatabase(testLocation)
@@ -496,5 +498,27 @@ block:
   removeDir(testLocation5)
   let db = initDatabase(testLocation5, (foo: int, bar: string))
   assert db is (Database[int, int], Database[string, string])
+
+type Bar = object
+  a: int
+  b: string
+
+block:
+  let db22 = db.initDatabase((db22: Bar, string)).db22
+
+  db22.withTransaction(t):
+    t[ Bar(a: 1, b: "hello") ] = "first"
+    t[ Bar(a: 2, b: "world") ] = "second"
+    t[ Bar(a: 1, b: "world") ] = "third"
+
+    assert t[ Bar(a: 1, b: "hello") ] == "first"
+    assert t[ Bar(a: 2, b: "world") ] == "second"
+    assert t[ Bar(a: 1, b: "world") ] == "third"
+
+  assert db22[ Bar(a: 1, b: "hello") ] == "first"
+  assert db22[ Bar(a: 1, b: "world") ] == "third"
+  assert db22[ Bar(a: 2, b: "world") ] == "second"
+
+removeFile("tests/tlimdb")
 
 

@@ -71,8 +71,8 @@ Transactions in LimDB are done using a simple block structure.
 
 .. code-block:: nim
     import limdb
-    let db = initDatabase[string, string]("myDirectory")
-    db.withTransaction as t:
+    let db = initDatabase("myDirectory")
+    db.withTransaction t:
       t["foo"] = "bar"
       echo t["foo"]
 
@@ -80,7 +80,7 @@ If there is an exception raised in your code, the writes in the block don't happ
 
 .. code-block:: nim
     import limdb
-    let db = initDatabase[string, string]("myDirectory")
+    let db = initDatabase("myDirectory")
     db.withTransaction:
       t["foo"] = "bar"
    
@@ -97,7 +97,7 @@ for example when interacting with a user through a form.
     proc valid(): bool = 
       false  # a real program would perform checks here 
 
-    let db = initDatabase[string, string]("myDirectory")
+    let db = initDatabase("myDirectory")
     try:
       db.withTransaction:
         t["foo"] = "bar"
@@ -248,7 +248,7 @@ an explicit `readonly` transaction.
     let db = initDatabase("myDirectory")
     db["foo"] = "bar"
 
-    db.withTransaction readonly as t:
+    db.withTransaction readonly t:
       echo t["foo"]
       t["fuz"] = "buz"  # raises IOError
     
@@ -266,7 +266,7 @@ If you really want a readwrite transaction that doesn't write for some reason, y
     
     # a bit slower but works fine
 
-    db.withTransaction readwrite as t:
+    db.withTransaction readwrite t:
       echo t["foo"]  
     
     db.tx rw:
@@ -370,7 +370,7 @@ data type before entering them and after retrieving them.
 .. code-block:: nim
    import datetime
    let db = initDatabase[string, float]("myDirectory")
-   db["now'] = now().toUnixTime
+   db["now"] = now().toUnixTime
 
    echo db["now"].fromUnixTime  # prints datetime
 
@@ -399,19 +399,24 @@ This is mainly for convenience, it doesn't run any faster than converting manual
 .. code-block:: nim
     import datetime
 
-    template toBlob(d: DateTime): Blob
+    template toBlob(d: DateTime): Blob =
       d.toUnixTime.toBlob
     
-    template fromBlob(b: Blob): DateTime
+    template fromBlob(b: Blob): DateTime =
       b.fromBlob(float).fromUnixTime
     
-    template compare(a, b: DateTime): DateTime
-      b.fromBlob(float).fromUnixTime
+    template compare(a, b: DateTime): bool =
+      if a < b:
+        -1
+      elif a > b:
+        1
+      else:
+        0
 
     let db = initDatabase[string, DateTime]("myDirectory")
-    db["now'] = now()
+    db["now"] = now()
 
-    echo db["now"].fromUnixTime  # prints datetime
+    echo db["now"]  # 2022-04-23T09:26:29+02:00
 
 You can also implement your type manually for more speed and control. In this case, you also need
 to supply a `compare` template or procedure that returns `1` if the `b` argument is larger, `-1` if
@@ -435,7 +440,7 @@ the `a` argument is larger, or `0` if they are equal.
         0
 
     let db = initDatabase[string, DateTime]("myDirectory")
-    db["now'] = now()
+    db["now"] = now()
 
     echo db["now"].fromUnixTime  # prints datetime
 
