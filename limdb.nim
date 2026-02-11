@@ -8,7 +8,7 @@
 # could do it on the client but it will just be such a pleasant surprise when
 # someone finds a half-finished comment already there when loading on another device
 
-import std/[os, macros], lmdb
+import std/[os, macros, typetraits], lmdb
 
 const minNim14 = NimMajor > 1 or (NimMajor == 1 and NimMinor >= 4)
 const maxNim10 = NimMajor < 1 or NimMajor == 1 and NimMinor == 0
@@ -96,9 +96,80 @@ proc compare[T: object | tuple](a, b: T): int =
       return r
   0
 
+proc addFlat[T](s: var string, x: T) =
+  ## Serialize a value into a byte buffer, handling variable-length fields.
+  when T is string:
+    var slen = x.len.int64
+    let p = s.len
+    s.setLen(p + sizeof(int64))
+    copyMem(addr s[p], addr slen, sizeof(int64))
+    if x.len > 0:
+      let p2 = s.len
+      s.setLen(p2 + x.len)
+      copyMem(addr s[p2], cast[pointer](x.cstring), x.len)
+  elif T is (tuple | object):
+    for f in x.fields:
+      s.addFlat(f)
+  elif T is seq:
+    var slen = x.len.int64
+    let p = s.len
+    s.setLen(p + sizeof(int64))
+    copyMem(addr s[p], addr slen, sizeof(int64))
+    for e in x:
+      s.addFlat(e)
+  elif T is array:
+    when supportsCopyMem(T):
+      let p = s.len
+      s.setLen(p + sizeof(T))
+      copyMem(addr s[p], x.unsafeAddr, sizeof(T))
+    else:
+      for e in x:
+        s.addFlat(e)
+  else:
+    let p = s.len
+    s.setLen(p + sizeof(T))
+    copyMem(addr s[p], x.unsafeAddr, sizeof(T))
+
+proc readFlat[T](data: pointer, size: int, pos: var int, x: var T) =
+  ## Deserialize a value from a byte buffer.
+  when T is string:
+    var slen: int64
+    readFlat(data, size, pos, slen)
+    x.setLen(slen)
+    if slen > 0:
+      copyMem(cast[pointer](x.cstring), cast[pointer](cast[uint](data) + pos.uint), slen)
+      pos += slen.int
+  elif T is (tuple | object):
+    for f in x.fields:
+      readFlat(data, size, pos, f)
+  elif T is seq:
+    var slen: int64
+    readFlat(data, size, pos, slen)
+    x.setLen(slen)
+    for e in x.mitems:
+      readFlat(data, size, pos, e)
+  elif T is array:
+    when supportsCopyMem(T):
+      copyMem(x.addr, cast[pointer](cast[uint](data) + pos.uint), sizeof(T))
+      pos += sizeof(T)
+    else:
+      for e in x.mitems:
+        readFlat(data, size, pos, e)
+  else:
+    copyMem(x.addr, cast[pointer](cast[uint](data) + pos.uint), sizeof(T))
+    pos += sizeof(T)
+
 proc wrapCompare(T: typedesc): auto =
-  result = proc (a, b: ptr Blob): cint {.cdecl.} =
-    compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
+  when not supportsCopyMem(T):
+    result = proc (a, b: ptr Blob): cint {.cdecl.} =
+      var ai, bi: int
+      var av, bv: T
+      readFlat(a.mvData, a.mvSize.int, ai, av)
+      readFlat(b.mvData, b.mvSize.int, bi, bv)
+      compare(av, bv).cint
+  else:
+    result = proc (a, b: ptr Blob): cint {.cdecl.} =
+      compare(cast[ptr T](a.mvData)[], cast[ptr T](b.mvData)[]).cint
 
 proc initTransaction*[A, B](d: Database[A, B], writeMode = readwrite): Transaction[A, B] =
   ## Start a transaction from a database.
@@ -146,10 +217,20 @@ proc toBlob*(s: string): Blob =
 
 template toBlob*(x: SomeNumber | SomeOrdinal | array | tuple | object): Blob =
   ## Convert standard Nim data types to a chunk of data, key or value, for LMDB
-  Blob(mvSize: sizeof(x).uint, mvData: cast[pointer](x.unsafeAddr))
+  when not supportsCopyMem(typeof(x)):
+    var buf = ""
+    addFlat(buf, x)
+    Blob(mvSize: buf.len.uint, mvData: buf.cstring)
+  else:
+    Blob(mvSize: sizeof(x).uint, mvData: cast[pointer](x.unsafeAddr))
 
 template toBlob*[T](s: seq[T]): Blob =
-  Blob(mvSize: uint(sizeof(T) * s.len), mvData: cast[pointer](s[0].unsafeAddr))
+  when not supportsCopyMem(T):
+    var buf = ""
+    addFlat(buf, s)
+    Blob(mvSize: buf.len.uint, mvData: buf.cstring)
+  else:
+    Blob(mvSize: uint(sizeof(T) * s.len), mvData: cast[pointer](s[0].unsafeAddr))
 
 proc fromBlob*(b: Blob, T: typedesc[string]): string =
   ## Convert a chunk of data, key or value, to a string
@@ -160,13 +241,21 @@ proc fromBlob*(b: Blob, T: typedesc[string]): string =
   copyMem(cast[pointer](result.cstring), cast[pointer](b.mvData), b.mvSize)
 
 proc fromBlob*(b: Blob, T: typedesc[SomeNumber | SomeOrdinal | array | tuple | object]): T =
-  ## Convert a chunk of data, key or value, to a string
-  cast[ptr T](b.mvData)[]
+  ## Convert a chunk of data, key or value, to standard Nim data types
+  when not supportsCopyMem(T):
+    var pos = 0
+    readFlat(b.mvData, b.mvSize.int, pos, result)
+  else:
+    cast[ptr T](b.mvData)[]
 
 proc fromBlob*[U](b: Blob, T: typedesc[seq[U]]): seq[U] =
   ## Convert a chunk of data, key or value, to a seq
-  result.setLen(b.mvSize.int div sizeof U)
-  copyMem(result[0].addr, b.mvData, b.mvSize)
+  when not supportsCopyMem(U):
+    var pos = 0
+    readFlat(b.mvData, b.mvSize.int, pos, result)
+  else:
+    result.setLen(b.mvSize.int div sizeof U)
+    copyMem(result[0].addr, b.mvData, b.mvSize)
 
 proc `[]`*[A, B](t: Transaction[A, B], key: A): B =
   # Read a value from a key in a transaction
